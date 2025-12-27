@@ -1,17 +1,33 @@
 const GITLAB_TOKEN = process.env.GITLAB_TOKEN;
 const GITLAB_API_URL = process.env.GITLAB_API_URL;
+const OPENCODE_PROVIDER = process.env.OPENCODE_PROVIDER;
+const OPENCODE_MODEL = process.env.OPENCODE_MODEL;
 
-// say all of the env variables missing
+// Validate required environment variables
+const missingVars: string[] = [];
+
 if (!GITLAB_TOKEN) {
-	console.error("Error: GITLAB_TOKEN is not set in environment variables.");
+	missingVars.push("GITLAB_TOKEN");
 }
 if (!GITLAB_API_URL) {
-	console.error("Error: GITLAB_API_URL is not set in environment variables.");
+	missingVars.push("GITLAB_API_URL");
 }
-if (!GITLAB_TOKEN || !GITLAB_API_URL) {
+if (!OPENCODE_PROVIDER) {
+	missingVars.push("OPENCODE_PROVIDER");
+}
+if (!OPENCODE_MODEL) {
+	missingVars.push("OPENCODE_MODEL");
+}
+
+if (missingVars.length > 0) {
+	console.error(
+		`Error: Missing required environment variables: ${missingVars.join(", ")}`,
+	);
 	process.exit(1);
 }
-// export as string variables
-// Create typed exports
-export const gitlabToken: string = GITLAB_TOKEN;
-export const gitlabApiUrl: string = GITLAB_API_URL;
+
+// Create typed exports - TypeScript now knows these are not undefined
+export const gitlabToken = GITLAB_TOKEN as string;
+export const gitlabApiUrl = GITLAB_API_URL as string;
+export const opencodeProvider = OPENCODE_PROVIDER as string;
+export const opencodeModel = OPENCODE_MODEL as string;

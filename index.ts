@@ -1,19 +1,23 @@
 import { GitLabClient } from "./lib/gitlab/gitlab-client";
-import { rewiewMergeRequest } from "./lib/review";
+import logger from "./lib/logger";
+import { server } from "./lib/opencode-helper";
+import { reviewMergeRequest } from "./lib/review";
 
-const _AVAILABLE_COMMANDS = ["review"] as const;
+const AVAILABLE_COMMANDS = ["review"] as const;
 
-console.log("Starting bibus bot...");
+logger.info("Starting bibus bot...");
 
 // test out the gitlab token
 export const gitlabClient = new GitLabClient();
 
 await gitlabClient.verifyToken();
 const currentUser = await gitlabClient.getCurrentUser();
-console.log(
-	`Connected as user: ${currentUser.username} (ID: ${currentUser.id})`,
+logger.info(
+	{ userId: currentUser.id, username: currentUser.username },
+	"Connected as user",
 );
-console.log("Fetching to-do items...");
+
+logger.debug("Fetching to-do items...");
 const mentions = await gitlabClient
 	.getTodos({ state: "pending" })
 	.then((items) =>
@@ -23,14 +27,23 @@ const mentions = await gitlabClient
 				item.author.id !== currentUser.id,
 		),
 	);
-console.log(
-	`There are ${mentions.length} direct mentions of ${currentUser.username}.`,
+logger.info(
+	{ count: mentions.length, username: currentUser.username },
+	"Direct mentions found",
 );
 
-const reviewRequests = mentions.filter((item) =>
-	item.body?.toLowerCase().includes("review"),
-);
-console.log(`There are ${reviewRequests.length} review requests.`);
-reviewRequests.forEach(async (item, _indexx) => {
-	await rewiewMergeRequest(item);
+const reviewRequests = mentions.filter((item) => {
+	// check if the comment has one of the available commands
+	const body = item.body?.toLowerCase() || "";
+	return AVAILABLE_COMMANDS.some((command) => body.includes(command));
 });
+logger.info({ count: reviewRequests.length }, "Review requests found");
+
+// Process reviews sequentially
+for (const item of reviewRequests) {
+	await reviewMergeRequest(item);
+}
+
+logger.info("All reviews completed, closing the server.");
+server.close();
+process.exit(0);

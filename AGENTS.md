@@ -29,6 +29,9 @@ bun biome ci .               # CI mode (for pre-commit checks)
 ```bash
 cp .env.example .env         # Copy environment template
 # Edit .env with your GitLab token and API URL
+
+# Set log level for debugging
+LOG_LEVEL=debug bun run index.ts
 ```
 
 ## Code Style Guidelines
@@ -106,10 +109,24 @@ cp .env.example .env         # Copy environment template
 
 ### Code Organization
 - Place GitLab API client code in `lib/gitlab/`
-- Place utility functions in `lib/` (e.g., `git.ts`, `env-vars.ts`)
+- Place utility functions in `lib/` (e.g., `git.ts`, `env-vars.ts`, `logger.ts`)
 - Keep models/interfaces separate in `gitlab-models.ts`
 - Main bot logic goes in `index.ts`
 - Test utilities in `test-bot.ts`
+
+### Logging
+- Use Pino logger from `lib/logger.ts` instead of `console.log`
+- Log levels: `trace`, `debug`, `info`, `warn`, `error`, `fatal`
+- Include structured context in logs
+- Example:
+  ```typescript
+  import logger from "./lib/logger";
+  
+  logger.info("Starting operation");
+  logger.debug({ count: items.length }, "Items processed");
+  logger.error({ error: err.message }, "Operation failed");
+  ```
+- See `LOGGING.md` for detailed logging guidelines
 
 ### GitLab API Patterns
 - Always use `encodeURIComponent()` for URL parameters

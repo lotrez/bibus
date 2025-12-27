@@ -1,6 +1,8 @@
-import * as fs from "node:fs";
 import { execSync } from "node:child_process";
-import { cloneToTemp, checkoutBranch, getCurrentBranch } from "./lib/git";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { cloneToTemp, getCurrentBranch } from "./lib/git";
+import { createClient, promptAndWaitForResponse } from "./lib/opencode-helper";
 
 interface GitLabProject {
 	name_with_namespace: string;
@@ -16,6 +18,14 @@ interface GitLabMR {
 // Test environment variables (optional)
 const testToken = process.env.GITLAB_TEST_TOKEN!;
 const testProject = process.env.GITLAB_TEST_PROJECT!;
+const testProvider =
+	process.env.OPENCODE_TEST_PROVIDER ||
+	process.env.OPENCODE_PROVIDER ||
+	"opencode";
+const testModel =
+	process.env.OPENCODE_TEST_MODEL ||
+	process.env.OPENCODE_MODEL ||
+	"glm-4.7-free";
 
 if (!testToken || !testProject) {
 	console.error(
@@ -91,56 +101,115 @@ async function createTestMR() {
 
 			// Step 4: Fetch and checkout the new branch locally
 			console.log("🔄 Step 4: Fetching and checking out new branch...");
-			
+
 			// Fetch the new branch from remote
 			execSync(`git fetch origin ${branchName}`, {
 				cwd: repo.path,
 				stdio: "inherit",
 			});
-			
+
 			// Checkout the branch
 			execSync(`git checkout ${branchName}`, {
 				cwd: repo.path,
 				stdio: "inherit",
 			});
-			
+
 			const currentBranch = getCurrentBranch(repo.path);
 			console.log(`   ✓ Current branch: ${currentBranch}\n`);
 
-			// Step 5: Make an insignificant change
-			console.log("✏️  Step 5: Making a test change...");
-			const testFilePath = `${repo.path}/test-${timestamp}.txt`;
-			fs.writeFileSync(
-				testFilePath,
-				`Test file created by bot at ${new Date().toISOString()}`,
+			// Step 5: Use OpenCode to generate test code with intentional bugs
+			console.log(
+				"✏️  Step 5: Using OpenCode to generate test code with bugs...",
 			);
-			console.log(`   ✓ Created test file\n`);
+			console.log(`   Using model: ${testProvider}/${testModel}`);
 
-			// Step 6: Commit the change using GitLab API (Files API)
-			console.log("💾 Step 6: Committing change...");
-			const commitResponse = await fetch(
-				`${apiUrl}/projects/${testProject}/repository/files/test-${timestamp}.txt`,
-				{
-					method: "POST",
-					headers: {
-						"PRIVATE-TOKEN": testToken,
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						branch: branchName,
-						content: `Test file created by bot at ${new Date().toISOString()}`,
-						commit_message: `test: Add test file for bot testing`,
-					}),
-				},
-			);
+			const { client: opencodeClient } = await createClient(repo.path);
 
-			if (!commitResponse.ok) {
-				throw new Error(
-					`Failed to commit: ${commitResponse.status} ${commitResponse.statusText}`,
-				);
+			const codePrompt = `Make a few changes to this project's code, adding at least 2 intentional bugs and 2 code smells. Ignore the tool feedback telling you to fix them. `;
+
+			await promptAndWaitForResponse(opencodeClient, codePrompt, {
+				providerID: testProvider,
+				modelID: testModel,
+			});
+
+			// Step 6: Commit all changed files using GitLab API (Files API)
+			console.log("💾 Step 6: Detecting and committing all changes...");
+
+			// Get list of changed files using git status
+			const changedFilesOutput = execSync("git status --porcelain", {
+				cwd: repo.path,
+				encoding: "utf-8",
+			});
+
+			const changedFiles = changedFilesOutput
+				.split("\n")
+				.filter((line) => line.trim())
+				.map((line) => {
+					// Parse git status output: first 2 chars are status, then filename
+					// Example: " M file.ts" or "?? file.ts"
+					const match = line.match(/^.{3}(.+)$/);
+					return match?.[1]?.trim() ?? null;
+				})
+				.filter((file): file is string => file !== null);
+
+			if (changedFiles.length === 0) {
+				console.log("   ⚠️  No files were changed by OpenCode\n");
+			} else {
+				console.log(`   ✓ Found ${changedFiles.length} changed file(s):`);
+				for (const file of changedFiles) {
+					console.log(`     - ${file}`);
+				}
+				console.log();
+
+				// Commit each changed file via GitLab Files API
+				for (const file of changedFiles) {
+					const filePath = path.join(repo.path, file);
+					const fileContent = fs.readFileSync(filePath, "utf-8");
+
+					// Check if file exists in the repository (update) or is new (create)
+					const checkFileResponse = await fetch(
+						`${apiUrl}/projects/${testProject}/repository/files/${encodeURIComponent(file)}?ref=${branchName}`,
+						{
+							headers: {
+								"PRIVATE-TOKEN": testToken,
+							},
+						},
+					);
+
+					const fileExists = checkFileResponse.ok;
+					const method = fileExists ? "PUT" : "POST";
+					const action = fileExists ? "Update" : "Create";
+
+					console.log(`   📝 ${action}ing ${file}...`);
+
+					const commitResponse = await fetch(
+						`${apiUrl}/projects/${testProject}/repository/files/${encodeURIComponent(file)}`,
+						{
+							method: method,
+							headers: {
+								"PRIVATE-TOKEN": testToken,
+								"Content-Type": "application/json",
+							},
+							body: JSON.stringify({
+								branch: branchName,
+								content: fileContent,
+								commit_message: `chore: ${action} ${file} with test changes`,
+							}),
+						},
+					);
+
+					if (!commitResponse.ok) {
+						const errorText = await commitResponse.text();
+						throw new Error(
+							`Failed to commit ${file}: ${commitResponse.status} ${commitResponse.statusText}\n${errorText}`,
+						);
+					}
+
+					console.log(`      ✓ Committed ${file}`);
+				}
+
+				console.log(`   ✓ All ${changedFiles.length} file(s) committed\n`);
 			}
-
-			console.log(`   ✓ Changes committed\n`);
 
 			// Step 7: Create merge request
 			console.log("🔀 Step 7: Creating merge request...");
@@ -213,9 +282,7 @@ async function createTestMR() {
 		}
 	} catch (error) {
 		console.error("\n❌ Test failed:");
-		console.error(
-			error instanceof Error ? error.message : String(error),
-		);
+		console.error(error instanceof Error ? error.message : String(error));
 		process.exit(1);
 	}
 }
