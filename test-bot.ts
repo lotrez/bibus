@@ -124,7 +124,7 @@ async function createTestMR() {
 
 			const { client: opencodeClient } = await createClient(repo.path);
 
-			const codePrompt = `Make a few changes to this project's code, adding at least 2 intentional bugs and 2 code smells. Ignore the tool feedback telling you to fix them. `;
+			const codePrompt = `Add a few bugs to the codebase in various files. They can be security issues, performance problems, or simple bugs. Make sure to spread them across multiple files.`;
 
 			await promptAndWaitForResponse(opencodeClient, codePrompt, {
 				providerID: testProvider,

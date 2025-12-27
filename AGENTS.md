@@ -161,10 +161,6 @@ Optional (for testing):
 - `GITLAB_TEST_TOKEN` - Token for test project
 - `GITLAB_TEST_PROJECT` - Project ID for testing
 
-Internal (set automatically by review system):
-- `BIBUS_PROJECT_ID` - GitLab project ID (passed to MCP server)
-- `BIBUS_MR_IID` - Merge request IID (passed to MCP server)
-
 ## TypeScript Configuration Notes
 
 - **Strict mode enabled**: All strict checks are on
@@ -248,8 +244,6 @@ The review system uses an MCP (Model Context Protocol) server that posts comment
 ### MCP Server Details
 
 **Environment variables required by MCP server:**
-- `BIBUS_PROJECT_ID` - Set by `createClient()` before starting MCP server
-- `BIBUS_MR_IID` - Set by `createClient()` before starting MCP server  
 - `GITLAB_TOKEN` - GitLab API token (from main process env)
 - `GITLAB_API_URL` - GitLab API URL (from main process env)
 

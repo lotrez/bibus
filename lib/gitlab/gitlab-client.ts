@@ -1,10 +1,14 @@
 import { gitlabApiUrl, gitlabToken } from "../env-vars";
 import logger from "../logger";
 import type {
+	CreateMergeRequestDiscussionParams,
 	CreateMergeRequestNoteParams,
 	CurrentUser,
+	Discussion,
 	GetTodosParams,
+	MergeRequestDiff,
 	MergeRequestNote,
+	MergeRequestVersion,
 	ModifyUserParams,
 	PersonalAccessToken,
 	Project,
@@ -433,6 +437,206 @@ export class GitLabClient {
 
 		const data = (await response.json()) as { avatar_url: string };
 		logger.info({ avatarUrl: data.avatar_url }, "Avatar uploaded successfully");
+
+		return data;
+	}
+
+	/**
+	 * Get merge request diff versions
+	 * @param projectId - The project ID or URL-encoded path
+	 * @param mergeRequestIid - The IID of the merge request
+	 * @returns Array of merge request versions
+	 * @throws Error if the request fails
+	 */
+	async getMergeRequestVersions(
+		projectId: string | number,
+		mergeRequestIid: number,
+	): Promise<MergeRequestVersion[]> {
+		const encodedId = encodeURIComponent(projectId);
+
+		logger.debug(
+			{ projectId, mergeRequestIid },
+			"Fetching merge request versions",
+		);
+
+		const response = await fetch(
+			`${this.apiUrl}/projects/${encodedId}/merge_requests/${mergeRequestIid}/versions`,
+			{
+				method: "GET",
+				headers: {
+					"PRIVATE-TOKEN": this.token,
+				},
+			},
+		);
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				logger.error("Invalid GitLab token: 401 Unauthorized");
+				throw new Error("Invalid GitLab token: 401 Unauthorized");
+			}
+			if (response.status === 404) {
+				logger.error({ projectId, mergeRequestIid }, "Project or MR not found");
+				throw new Error(
+					`Project or merge request not found: ${projectId}/!${mergeRequestIid}`,
+				);
+			}
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText },
+				"Failed to fetch merge request versions",
+			);
+			throw new Error(
+				`Failed to fetch merge request versions: ${response.status} ${response.statusText}\n${errorText}`,
+			);
+		}
+
+		const data = (await response.json()) as MergeRequestVersion[];
+		logger.debug(
+			{ projectId, mergeRequestIid, versionCount: data.length },
+			"Merge request versions retrieved",
+		);
+
+		return data;
+	}
+
+	/**
+	 * Get merge request diff with line codes
+	 * @param projectId - The project ID or URL-encoded path
+	 * @param mergeRequestIid - The IID of the merge request
+	 * @param versionId - Optional version ID (defaults to latest)
+	 * @returns The merge request diff with line codes
+	 * @throws Error if the request fails
+	 */
+	async getMergeRequestDiff(
+		projectId: string | number,
+		mergeRequestIid: number,
+		versionId?: number,
+	): Promise<MergeRequestDiff> {
+		const encodedId = encodeURIComponent(projectId);
+
+		let url = `${this.apiUrl}/projects/${encodedId}/merge_requests/${mergeRequestIid}/versions`;
+
+		// If specific version requested, use it; otherwise get the latest (first in array)
+		if (versionId) {
+			url += `/${versionId}`;
+		}
+
+		logger.debug(
+			{ projectId, mergeRequestIid, versionId },
+			"Fetching merge request diff",
+		);
+
+		const response = await fetch(url, {
+			method: "GET",
+			headers: {
+				"PRIVATE-TOKEN": this.token,
+			},
+		});
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				logger.error("Invalid GitLab token: 401 Unauthorized");
+				throw new Error("Invalid GitLab token: 401 Unauthorized");
+			}
+			if (response.status === 404) {
+				logger.error({ projectId, mergeRequestIid }, "Project or MR not found");
+				throw new Error(
+					`Project or merge request not found: ${projectId}/!${mergeRequestIid}`,
+				);
+			}
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText },
+				"Failed to fetch merge request diff",
+			);
+			throw new Error(
+				`Failed to fetch merge request diff: ${response.status} ${response.statusText}\n${errorText}`,
+			);
+		}
+
+		// If we didn't specify versionId, we get an array, take the first one
+		const data = (await response.json()) as
+			| MergeRequestDiff
+			| MergeRequestDiff[];
+		const diff = versionId
+			? (data as MergeRequestDiff)
+			: (data as MergeRequestDiff[])[0];
+
+		if (!diff) {
+			throw new Error("No diff versions found");
+		}
+
+		logger.debug(
+			{
+				projectId,
+				mergeRequestIid,
+				diffId: diff.id,
+				fileCount: diff.diffs?.length || 0,
+			},
+			"Merge request diff retrieved",
+		);
+
+		return diff;
+	}
+
+	/**
+	 * Create a discussion (thread) on a merge request
+	 * @param projectId - The project ID or URL-encoded path
+	 * @param mergeRequestIid - The IID of the merge request
+	 * @param params - The discussion parameters
+	 * @returns The created discussion
+	 * @throws Error if the request fails
+	 */
+	async createMergeRequestDiscussion(
+		projectId: string | number,
+		mergeRequestIid: number,
+		params: CreateMergeRequestDiscussionParams,
+	): Promise<Discussion> {
+		const encodedId = encodeURIComponent(projectId);
+
+		logger.debug(
+			{ projectId, mergeRequestIid, bodyLength: params.body.length },
+			"Creating merge request discussion",
+		);
+
+		const response = await fetch(
+			`${this.apiUrl}/projects/${encodedId}/merge_requests/${mergeRequestIid}/discussions`,
+			{
+				method: "POST",
+				headers: {
+					"PRIVATE-TOKEN": this.token,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(params),
+			},
+		);
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				logger.error("Invalid GitLab token: 401 Unauthorized");
+				throw new Error("Invalid GitLab token: 401 Unauthorized");
+			}
+			if (response.status === 404) {
+				logger.error({ projectId, mergeRequestIid }, "Project or MR not found");
+				throw new Error(
+					`Project or merge request not found: ${projectId}/!${mergeRequestIid}`,
+				);
+			}
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText },
+				"Failed to create merge request discussion",
+			);
+			throw new Error(
+				`Failed to create merge request discussion: ${response.status} ${response.statusText}\n${errorText}`,
+			);
+		}
+
+		const data = (await response.json()) as Discussion;
+		logger.info(
+			{ projectId, mergeRequestIid, discussionId: data.id },
+			"Merge request discussion created",
+		);
 
 		return data;
 	}

@@ -358,3 +358,112 @@ export interface ModifyUserParams {
 	view_diffs_file_by_file?: boolean;
 	website_url?: string;
 }
+
+export interface DiffPosition {
+	base_sha: string;
+	start_sha: string;
+	head_sha: string;
+	old_path: string;
+	new_path: string;
+	position_type: "text" | "image" | "file";
+	line_code?: string;
+	old_line?: number;
+	new_line?: number;
+	width?: number;
+	height?: number;
+	x?: number;
+	y?: number;
+	line_range?: {
+		start: {
+			line_code: string;
+			type: "old" | "new";
+			old_line?: number;
+			new_line?: number;
+		};
+		end: {
+			line_code: string;
+			type: "old" | "new";
+			old_line?: number;
+			new_line?: number;
+		};
+	};
+}
+
+export interface DiscussionNote {
+	id: number;
+	type: "DiscussionNote" | "DiffNote" | null;
+	body: string;
+	attachment: string | null;
+	author: GitLabUser;
+	created_at: string;
+	updated_at: string;
+	system: boolean;
+	noteable_id: number;
+	noteable_type: string;
+	project_id: number;
+	noteable_iid: number | null;
+	resolvable: boolean;
+	resolved?: boolean;
+	resolved_by?: GitLabUser | null;
+	resolved_at?: string | null;
+	commit_id?: string;
+	position?: DiffPosition;
+	confidential?: boolean;
+	internal?: boolean;
+}
+
+export interface Discussion {
+	id: string;
+	individual_note: boolean;
+	notes: DiscussionNote[];
+}
+
+export interface CreateMergeRequestDiscussionParams {
+	body: string;
+	created_at?: string;
+	position?: DiffPosition;
+}
+
+export interface MergeRequestVersion {
+	id: number;
+	head_commit_sha: string;
+	base_commit_sha: string;
+	start_commit_sha: string;
+	created_at: string;
+	merge_request_id: number;
+	state: string;
+	real_size: string;
+}
+
+export interface MergeRequestDiffLine {
+	line_code: string;
+	type: "old" | "new" | "match" | "old-nonewline" | "new-nonewline";
+	old_line?: number;
+	new_line?: number;
+	text: string;
+	rich_text?: string;
+}
+
+export interface MergeRequestDiffFile {
+	old_path: string;
+	new_path: string;
+	a_mode: string;
+	b_mode: string;
+	new_file: boolean;
+	renamed_file: boolean;
+	deleted_file: boolean;
+	diff: string;
+	lines?: MergeRequestDiffLine[];
+}
+
+export interface MergeRequestDiff {
+	id: number;
+	head_commit_sha: string;
+	base_commit_sha: string;
+	start_commit_sha: string;
+	created_at: string;
+	merge_request_id: number;
+	state: string;
+	real_size: string;
+	diffs: MergeRequestDiffFile[];
+}

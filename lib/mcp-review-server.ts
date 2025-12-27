@@ -9,6 +9,11 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { GitLabClient } from "./gitlab/gitlab-client.ts";
+import type {
+	DiffPosition,
+	MergeRequestDiff,
+	MergeRequestVersion,
+} from "./gitlab/gitlab-models.ts";
 import type { ReviewCommentParams } from "./mcp.model.ts";
 
 // Validate required environment variables
@@ -23,16 +28,20 @@ if (!gitlabToken) {
 // Initialize GitLab client with validated credentials
 const gitlabClient = new GitLabClient(gitlabApiUrl, gitlabToken);
 
+// Cache for MR version and diff info
+let mrVersionCache: MergeRequestVersion | null = null;
+let mrDiffCache: MergeRequestDiff | null = null;
+
 // Define Zod schema for tool input validation
 const reviewCommentSchema = z
 	.object({
-		file: z.string().nullable(),
-		line: z.number().nullable(),
+		file: z.string().optional(),
+		line: z.number().optional(),
 		severity: z.enum(["critical", "warning", "suggestion", "praise"]),
 		comment: z.string().min(1),
-		suggestedCode: z.string().nullable(),
-		suggestionLinesAbove: z.number().min(0).max(100).nullable(),
-		suggestionLinesBelow: z.number().min(0).max(100).nullable(),
+		suggestedCode: z.string().optional(),
+		suggestionLinesAbove: z.number().min(0).max(100).optional(),
+		suggestionLinesBelow: z.number().min(0).max(100).optional(),
 		projectId: z.number(),
 		mrIid: z.number(),
 	})
@@ -45,31 +54,117 @@ const reviewCommentSchema = z
 	}));
 
 /**
- * Post a review comment directly to GitLab
+ * Get the latest MR version (cached)
+ */
+async function getMRVersion(
+	projectId: string,
+	mrIid: string,
+): Promise<MergeRequestVersion> {
+	if (mrVersionCache) {
+		return mrVersionCache;
+	}
+
+	const versions = await gitlabClient.getMergeRequestVersions(
+		Number.parseInt(projectId, 10),
+		Number.parseInt(mrIid, 10),
+	);
+
+	if (versions.length === 0 || !versions[0]) {
+		throw new Error("No MR versions found");
+	}
+
+	// Latest version is first in the array
+	const latestVersion = versions[0];
+	mrVersionCache = latestVersion;
+	console.error(
+		`[MCP] Cached MR version: base=${latestVersion.base_commit_sha.substring(0, 8)}, head=${latestVersion.head_commit_sha.substring(0, 8)}`,
+	);
+
+	return latestVersion;
+}
+
+/**
+ * Get the latest MR diff with line codes (cached)
+ */
+async function getMRDiff(
+	projectId: string,
+	mrIid: string,
+): Promise<MergeRequestDiff> {
+	if (mrDiffCache) {
+		return mrDiffCache;
+	}
+
+	const diff = await gitlabClient.getMergeRequestDiff(
+		Number.parseInt(projectId, 10),
+		Number.parseInt(mrIid, 10),
+	);
+
+	mrDiffCache = diff;
+	console.error(
+		`[MCP] Cached MR diff: ${diff.diffs?.length || 0} files changed`,
+	);
+
+	return diff;
+}
+
+/**
+ * Find the line_code for a specific file and line number
+ */
+function findLineCode(
+	diff: MergeRequestDiff,
+	filePath: string,
+	lineNumber: number,
+): string | null {
+	// Find the file in the diff
+	const file = diff.diffs?.find(
+		(f) => f.new_path === filePath || f.old_path === filePath,
+	);
+
+	if (!file || !file.lines) {
+		console.error(`[MCP] File not found in diff: ${filePath}`);
+		return null;
+	}
+
+	// Find the line with the matching new_line number
+	const line = file.lines.find((l) => l.new_line === lineNumber);
+
+	if (!line) {
+		console.error(
+			`[MCP] Line ${lineNumber} not found in file ${filePath}. Available lines: ${file.lines
+				.map((l) => l.new_line)
+				.filter(Boolean)
+				.join(", ")}`,
+		);
+		return null;
+	}
+
+	return line.line_code;
+}
+
+/**
+ * Post a review comment directly to GitLab as a discussion
  * @param params - Review comment parameters
  * @throws {McpError} If posting comment fails
  */
 async function postCommentToGitLab(params: ReviewCommentParams): Promise<void> {
 	const severityEmoji = {
-		critical: "[critical]",
-		warning: "[warning]",
-		suggestion: "[suggestion]",
-		praise: "[praise]",
+		critical: "🔴 **CRITICAL**",
+		warning: "🟡 **Warning**",
+		suggestion: "💡 **Suggestion**",
+		praise: "✅ **Good**",
 	}[params.severity];
 
-	let body = `**${severityEmoji}**`;
+	let body = `${severityEmoji}`;
 
-	if (params.file) {
-		body += ` \`${params.file}\``;
-		if (params.line !== null) {
-			body += `:${params.line}`;
-		}
+	if (params.file && params.line === null) {
+		// File-level comment (no line number)
+		body += ` in \`${params.file}\``;
 	}
 
 	body += `\n\n${params.comment}`;
 
 	// Format GitLab suggestion if provided
-	if (params.suggestedCode) {
+	if (params.suggestedCode && params.file && params.line !== null) {
 		const linesAbove = params.suggestionLinesAbove ?? 0;
 		const linesBelow = params.suggestionLinesBelow ?? 0;
 
@@ -79,14 +174,66 @@ async function postCommentToGitLab(params: ReviewCommentParams): Promise<void> {
 	}
 
 	try {
-		// Post to GitLab using GitLabClient
-		await gitlabClient.createMergeRequestNote(params.projectId, params.mrIid, {
-			body,
-		});
+		// For diff comments (file + line specified), create a positioned discussion
+		if (params.file && params.line !== null) {
+			const version = await getMRVersion(
+				params.projectId.toString(),
+				params.mrIid.toString(),
+			);
 
-		console.error(
-			`[MCP] Posted comment: ${params.severity} ${params.file ?? "general"}${params.line !== null ? `:${params.line}` : ""}`,
-		);
+			// Fetch the diff to get line codes
+			const diff = await getMRDiff(
+				params.projectId.toString(),
+				params.mrIid.toString(),
+			);
+
+			// Find the line_code for this file and line number
+			const lineCode = findLineCode(diff, params.file, params.line);
+
+			if (!lineCode) {
+				throw new Error(
+					`Could not find line_code for ${params.file}:${params.line}. The line may not exist in the diff. Make sure you're commenting on lines that were added or modified in this MR.`,
+				);
+			}
+
+			// Build position for diff comment
+			const position: DiffPosition = {
+				base_sha: version.base_commit_sha,
+				start_sha: version.start_commit_sha,
+				head_sha: version.head_commit_sha,
+				old_path: params.file,
+				new_path: params.file,
+				position_type: "text",
+				line_code: lineCode,
+				new_line: params.line, // Comment on the new version of the file
+			};
+
+			await gitlabClient.createMergeRequestDiscussion(
+				params.projectId,
+				params.mrIid,
+				{
+					body,
+					position,
+				},
+			);
+
+			console.error(
+				`[MCP] Posted diff comment: ${params.severity} ${params.file}:${params.line} (line_code: ${lineCode})`,
+			);
+		} else {
+			// For general or file-level comments, create a non-positioned discussion
+			await gitlabClient.createMergeRequestDiscussion(
+				params.projectId,
+				params.mrIid,
+				{
+					body,
+				},
+			);
+
+			console.error(
+				`[MCP] Posted general comment: ${params.severity} ${params.file ?? "general"}`,
+			);
+		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(`[MCP] Failed to post comment to GitLab: ${message}`);

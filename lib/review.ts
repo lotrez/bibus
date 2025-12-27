@@ -16,9 +16,10 @@ export async function reviewMergeRequest(item: Todo) {
 	);
 
 	// comment on the merge request
-	await gitlabClient.createMergeRequestNote(item.project.id, item.target.iid, {
-		body: "Meow 🐈, I'll start reviewing this merge request...",
-	});
+	// reenable when finished dev, do not post yet to not disable the todo
+	// await gitlabClient.createMergeRequestNote(item.project.id, item.target.iid, {
+	// 	body: "Meow 🐈, I'll start reviewing this merge request...",
+	// });
 
 	// get the project, use the url to clone it
 	const projectDetails = await gitlabClient.getProject(item.project.id);
@@ -89,14 +90,6 @@ Start now: run git diff, then post_review_comment for each finding.`;
 				responseLength: responseText.length,
 			},
 			"Review session completed",
-		);
-
-		await gitlabClient.createMergeRequestNote(
-			item.project.id,
-			item.target.iid,
-			{
-				body: `## Review Summary\n\n${responseText}`,
-			},
 		);
 		logger.info(
 			{ mrIid: item.target.iid, commentCount },

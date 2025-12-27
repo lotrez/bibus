@@ -10,7 +10,7 @@ import type { ReviewCommentParams } from "./mcp.model.ts";
 
 // Get the path to the MCP server script
 const mcpServerPath = path.join(import.meta.dirname, "mcp-review-server.ts");
-// Create server with MCP config, passing project/MR context via env
+// Create server with MCP config
 const server = await createOpencodeServer({
 	port: Math.floor(10000 + Math.random() * 50000),
 	config: {
@@ -23,6 +23,7 @@ const server = await createOpencodeServer({
 		},
 	},
 });
+
 const createClient = async (
 	directory: string,
 	projectId?: number,
@@ -96,7 +97,15 @@ async function promptAndWaitForResponse(
 						"AI response part received",
 					);
 				}
-
+				if (part.type === "tool" && part.state.status === "error") {
+					logger.error(
+						{
+							tool: part.tool,
+							error: part.state.error,
+						},
+						"Tool execution failed",
+					);
+				}
 				// Tool calls - log at debug level
 				if (part.type === "tool" && part.state.status === "completed") {
 					logger.debug(
@@ -222,7 +231,11 @@ async function createReviewSession(
 				if (part.type === "text" && part.time?.end) {
 					responseText += part.text;
 					logger.debug(
-						{ textLength: part.text.length, totalLength: responseText.length },
+						{
+							textLength: part.text.length,
+							totalLength: responseText.length,
+							part: part.text,
+						},
 						"AI response part received",
 					);
 				}
