@@ -5,6 +5,33 @@ import { reviewMergeRequest } from "./lib/review";
 
 const AVAILABLE_COMMANDS = ["review"] as const;
 
+// Graceful shutdown handler
+let isShuttingDown = false;
+async function gracefulShutdown(signal: string) {
+	if (isShuttingDown) {
+		logger.warn("Shutdown already in progress, forcing exit...");
+		process.exit(1);
+	}
+	isShuttingDown = true;
+
+	logger.info({ signal }, "Received shutdown signal, closing server...");
+	try {
+		await server.close();
+		logger.info("Server closed successfully");
+		process.exit(0);
+	} catch (error) {
+		logger.error(
+			{ error: error instanceof Error ? error.message : String(error) },
+			"Error during shutdown",
+		);
+		process.exit(1);
+	}
+}
+
+// Register signal handlers for graceful shutdown
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
 logger.info("Starting bibus bot...");
 
 // test out the gitlab token
@@ -45,5 +72,5 @@ for (const item of reviewRequests) {
 }
 
 logger.info("All reviews completed, closing the server.");
-server.close();
+await server.close();
 process.exit(0);

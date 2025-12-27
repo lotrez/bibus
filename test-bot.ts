@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { cloneToTemp, getCurrentBranch } from "./lib/git";
+import logger from "./lib/logger";
 import { createClient, promptAndWaitForResponse } from "./lib/opencode-helper";
 
 interface GitLabProject {
@@ -40,11 +41,11 @@ if (!testToken || !testProject) {
 const apiUrl = process.env.GITLAB_API_URL || "https://gitlab.com/api/v4";
 
 async function createTestMR() {
-	console.log("🚀 Starting bot test...\n");
+	logger.info("🚀 Starting bot test...\n");
 
 	try {
 		// Step 1: Get project info
-		console.log("📋 Step 1: Getting project information...");
+		logger.info("📋 Step 1: Getting project information...");
 		const projectResponse = await fetch(`${apiUrl}/projects/${testProject}`, {
 			headers: {
 				"PRIVATE-TOKEN": testToken,
@@ -58,13 +59,13 @@ async function createTestMR() {
 		}
 
 		const project = (await projectResponse.json()) as GitLabProject;
-		console.log(`   ✓ Project: ${project.name_with_namespace}`);
-		console.log(`   ✓ Default branch: ${project.default_branch}\n`);
+		logger.info(`   ✓ Project: ${project.name_with_namespace}`);
+		logger.info(`   ✓ Default branch: ${project.default_branch}\n`);
 
 		// Step 2: Clone the repository
-		console.log("📦 Step 2: Cloning repository...");
+		logger.info("📦 Step 2: Cloning repository...");
 		const repo = cloneToTemp(project.http_url_to_repo);
-		console.log(`   ✓ Cloned to: ${repo.path}\n`);
+		logger.info(`   ✓ Cloned to: ${repo.path}\n`);
 
 		try {
 			// Step 3: Create a new branch with timestamp
@@ -72,7 +73,7 @@ async function createTestMR() {
 			const branchName = `bot-test-${timestamp}`;
 			const defaultBranch = project.default_branch || "main";
 
-			console.log(`📝 Step 3: Creating branch ${branchName}...`);
+			logger.info(`📝 Step 3: Creating branch ${branchName}...`);
 
 			// Create branch via API (better than local git)
 			const createBranchResponse = await fetch(
@@ -97,10 +98,10 @@ async function createTestMR() {
 				);
 			}
 
-			console.log(`   ✓ Branch created: ${branchName}\n`);
+			logger.info(`   ✓ Branch created: ${branchName}\n`);
 
 			// Step 4: Fetch and checkout the new branch locally
-			console.log("🔄 Step 4: Fetching and checking out new branch...");
+			logger.info("🔄 Step 4: Fetching and checking out new branch...");
 
 			// Fetch the new branch from remote
 			execSync(`git fetch origin ${branchName}`, {
@@ -115,13 +116,13 @@ async function createTestMR() {
 			});
 
 			const currentBranch = getCurrentBranch(repo.path);
-			console.log(`   ✓ Current branch: ${currentBranch}\n`);
+			logger.info(`   ✓ Current branch: ${currentBranch}\n`);
 
 			// Step 5: Use OpenCode to generate test code with intentional bugs
-			console.log(
+			logger.info(
 				"✏️  Step 5: Using OpenCode to generate test code with bugs...",
 			);
-			console.log(`   Using model: ${testProvider}/${testModel}`);
+			logger.debug(`   Using model: ${testProvider}/${testModel}`);
 
 			const { client: opencodeClient } = await createClient(repo.path);
 
@@ -133,7 +134,7 @@ async function createTestMR() {
 			});
 
 			// Step 6: Commit all changed files using GitLab API (Files API)
-			console.log("💾 Step 6: Detecting and committing all changes...");
+			logger.info("💾 Step 6: Detecting and committing all changes...");
 
 			// Get list of changed files using git status
 			const changedFilesOutput = execSync("git status --porcelain", {
@@ -153,13 +154,13 @@ async function createTestMR() {
 				.filter((file): file is string => file !== null);
 
 			if (changedFiles.length === 0) {
-				console.log("   ⚠️  No files were changed by OpenCode\n");
+				logger.info("   ⚠️  No files were changed by OpenCode\n");
 			} else {
-				console.log(`   ✓ Found ${changedFiles.length} changed file(s):`);
+				logger.info(`   ✓ Found ${changedFiles.length} changed file(s):`);
 				for (const file of changedFiles) {
-					console.log(`     - ${file}`);
+					logger.info(`     - ${file}`);
 				}
-				console.log();
+				logger.info("");
 
 				// Commit each changed file via GitLab Files API
 				for (const file of changedFiles) {
@@ -180,7 +181,7 @@ async function createTestMR() {
 					const method = fileExists ? "PUT" : "POST";
 					const action = fileExists ? "Update" : "Create";
 
-					console.log(`   📝 ${action}ing ${file}...`);
+					logger.info(`   📝 ${action}ing ${file}...`);
 
 					const commitResponse = await fetch(
 						`${apiUrl}/projects/${testProject}/repository/files/${encodeURIComponent(file)}`,
@@ -194,6 +195,7 @@ async function createTestMR() {
 								branch: branchName,
 								content: fileContent,
 								commit_message: `chore: ${action} ${file} with test changes`,
+								encoding: "text",
 							}),
 						},
 					);
@@ -205,14 +207,14 @@ async function createTestMR() {
 						);
 					}
 
-					console.log(`      ✓ Committed ${file}`);
+					logger.info(`      ✓ Committed ${file}`);
 				}
 
-				console.log(`   ✓ All ${changedFiles.length} file(s) committed\n`);
+				logger.info(`   ✓ All ${changedFiles.length} file(s) committed\n`);
 			}
 
 			// Step 7: Create merge request
-			console.log("🔀 Step 7: Creating merge request...");
+			logger.info("🔀 Step 7: Creating merge request...");
 			const mrResponse = await fetch(
 				`${apiUrl}/projects/${testProject}/merge_requests`,
 				{
@@ -238,11 +240,11 @@ async function createTestMR() {
 			}
 
 			const mr = (await mrResponse.json()) as GitLabMR;
-			console.log(`   ✓ MR created: !${mr.iid}`);
-			console.log(`   ✓ URL: ${mr.web_url}\n`);
+			logger.info(`   ✓ MR created: !${mr.iid}`);
+			logger.info(`   ✓ URL: ${mr.web_url}\n`);
 
 			// Step 8: Add a comment mentioning @ask-bibus
-			console.log("💬 Step 8: Adding comment with @ask-bibus mention...");
+			logger.info("💬 Step 8: Adding comment with @ask-bibus mention...");
 			const commentResponse = await fetch(
 				`${apiUrl}/projects/${testProject}/merge_requests/${mr.iid}/notes`,
 				{
@@ -263,22 +265,22 @@ async function createTestMR() {
 				);
 			}
 
-			console.log(`   ✓ Comment added: "@ask-bibus review"\n`);
+			logger.info(`   ✓ Comment added: "@ask-bibus review"\n`);
 
 			// Summary
-			console.log("✅ Test completed successfully!\n");
-			console.log("📊 Summary:");
-			console.log(`   - Branch: ${branchName}`);
-			console.log(`   - MR: !${mr.iid}`);
-			console.log(`   - URL: ${mr.web_url}`);
-			console.log(
+			logger.info("✅ Test completed successfully!\n");
+			logger.info("📊 Summary:");
+			logger.info(`   - Branch: ${branchName}`);
+			logger.info(`   - MR: !${mr.iid}`);
+			logger.info(`   - URL: ${mr.web_url}`);
+			logger.info(
 				`   - Comment: Added "@ask-bibus review" to trigger the bot\n`,
 			);
 		} finally {
 			// Cleanup
-			console.log("🧹 Cleaning up...");
+			logger.info("🧹 Cleaning up...");
 			repo.cleanup();
-			console.log("   ✓ Cleaned up temporary files\n");
+			logger.info("   ✓ Cleaned up temporary files\n");
 		}
 	} catch (error) {
 		console.error("\n❌ Test failed:");

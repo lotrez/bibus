@@ -12,7 +12,9 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.0.203",
-    "pino": "^10.1.0"
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@opencode-ai/sdk": "^1.0.204",
+    "pino": "^10.1.0",
+    "zod": "^4.2.1"
   }
 }

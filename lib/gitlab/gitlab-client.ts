@@ -16,9 +16,9 @@ export class GitLabClient {
 	private apiUrl: string;
 	private currentUserCache: CurrentUser | null = null;
 
-	constructor() {
-		this.token = gitlabToken;
-		this.apiUrl = gitlabApiUrl;
+	constructor(apiUrl?: string, token?: string) {
+		this.token = token ?? gitlabToken;
+		this.apiUrl = apiUrl ?? gitlabApiUrl;
 	}
 
 	/**

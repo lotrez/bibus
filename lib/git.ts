@@ -50,10 +50,7 @@ export function cloneToTemp(projectUrl: string, branch?: string): CloneResult {
 		const branchArg = branch ? `--branch ${branch}` : "";
 		const command = `git clone ${branchArg} "${urlWithToken}" "${tempDir}"`;
 
-		logger.debug(
-			{ url: projectUrl, branch, tempDir },
-			"Cloning repository...",
-		);
+		logger.debug({ url: projectUrl, branch, tempDir }, "Cloning repository...");
 
 		// Execute clone command and capture output
 		const output = execSync(command, {
@@ -190,10 +187,7 @@ export function checkoutBranch(
 		const createFlag = createNew ? "-b" : "";
 		const command = `git checkout ${createFlag} ${branch}`;
 
-		logger.debug(
-			{ branch, createNew, repoPath },
-			"Checking out branch...",
-		);
+		logger.debug({ branch, createNew, repoPath }, "Checking out branch...");
 
 		const output = execSync(command, {
 			cwd: repoPath,

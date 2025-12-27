@@ -113,6 +113,8 @@ LOG_LEVEL=debug bun run index.ts
 - Keep models/interfaces separate in `gitlab-models.ts`
 - Main bot logic goes in `index.ts`
 - Test utilities in `test-bot.ts`
+- MCP server code in `lib/mcp-review-server.ts`
+- OpenCode integration helpers in `lib/opencode-helper.ts`
 
 ### Logging
 - Use Pino logger from `lib/logger.ts` instead of `console.log`
@@ -152,10 +154,16 @@ LOG_LEVEL=debug bun run index.ts
 Required (in `.env`):
 - `GITLAB_TOKEN` - Your GitLab personal access token
 - `GITLAB_API_URL` - GitLab API URL (default: https://gitlab.com/api/v4)
+- `OPENCODE_PROVIDER` - OpenCode AI provider (e.g., "anthropic")
+- `OPENCODE_MODEL` - OpenCode AI model (e.g., "claude-3-5-sonnet-20241022")
 
 Optional (for testing):
 - `GITLAB_TEST_TOKEN` - Token for test project
 - `GITLAB_TEST_PROJECT` - Project ID for testing
+
+Internal (set automatically by review system):
+- `BIBUS_PROJECT_ID` - GitLab project ID (passed to MCP server)
+- `BIBUS_MR_IID` - Merge request IID (passed to MCP server)
 
 ## TypeScript Configuration Notes
 
@@ -201,3 +209,58 @@ try {
 - Fetch remote branches before checking them out locally
 - Use GitLab Files API for commits rather than local git commits
 - Test scripts should be idempotent and self-cleaning
+
+## Architecture: Review System with MCP Server
+
+### Overview
+The review system uses an MCP (Model Context Protocol) server that posts comments directly to GitLab in real-time as the AI generates them.
+
+### Components
+
+1. **Main Bot (`index.ts`)**: Polls GitLab for todo items (mentions) and triggers reviews
+2. **Review Module (`lib/review.ts`)**: Orchestrates the review process, clones the MR branch, and creates the OpenCode session
+3. **OpenCode Helper (`lib/opencode-helper.ts`)**: Manages OpenCode client/server, creates review sessions, and tracks comment counts
+4. **MCP Review Server (`lib/mcp-review-server.ts`)**: Standalone process that provides the `post_review_comment` tool and posts comments directly to GitLab via API
+
+### Review Flow
+
+1. Bot detects a mention in a merge request
+2. `reviewMergeRequest()` clones the MR branch to a temp directory
+3. Creates an OpenCode client with MCP server configured:
+   - Passes `projectId` and `mrIid` via environment variables
+   - MCP server receives GitLab credentials from env
+4. AI receives prompt to review the code using git diff
+5. For each issue found, AI calls `post_review_comment` tool:
+   - Tool call is handled by MCP server (separate process)
+   - MCP server **immediately** posts comment to GitLab API
+   - Returns confirmation to AI
+6. Main process tracks comment count via OpenCode event stream
+7. After review completes, posts summary if provided
+
+### Key Design Decisions
+
+- **Direct posting in MCP**: Comments are posted immediately when the tool is called, not batched or queued
+- **Separate process**: MCP server runs as independent process, communicates via stdio
+- **Environment context**: Project ID and MR IID passed via environment variables to MCP server
+- **Real-time feedback**: Each comment appears on GitLab as soon as AI generates it
+- **No callback chain**: Removed callback-based posting from event stream; MCP handles it directly
+
+### MCP Server Details
+
+**Environment variables required by MCP server:**
+- `BIBUS_PROJECT_ID` - Set by `createClient()` before starting MCP server
+- `BIBUS_MR_IID` - Set by `createClient()` before starting MCP server  
+- `GITLAB_TOKEN` - GitLab API token (from main process env)
+- `GITLAB_API_URL` - GitLab API URL (from main process env)
+
+**Tool: `post_review_comment`**
+- Parameters: file, line, severity, comment, suggestedCode, suggestionLinesAbove, suggestionLinesBelow
+- Action: Formats comment with severity badge and optional code suggestion, posts to GitLab immediately
+- Returns: Confirmation message to AI with posted comment details
+
+### Error Handling
+
+- MCP server validates environment variables on startup, exits if missing
+- Failed comment posts are caught and reported back to AI as tool errors
+- Main process logs tool execution for debugging
+- Temp directory cleanup always runs in finally block
