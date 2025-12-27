@@ -1,4 +1,5 @@
 import { GitLabClient } from "./lib/gitlab/gitlab-client";
+import { updateProfile } from "./lib/gitlab/profile";
 import logger from "./lib/logger";
 import { server } from "./lib/opencode-helper";
 import { reviewMergeRequest } from "./lib/review";
@@ -39,6 +40,7 @@ export const gitlabClient = new GitLabClient();
 
 await gitlabClient.verifyToken();
 const currentUser = await gitlabClient.getCurrentUser();
+await updateProfile();
 logger.info(
 	{ userId: currentUser.id, username: currentUser.username },
 	"Connected as user",

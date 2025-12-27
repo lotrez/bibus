@@ -323,3 +323,38 @@ export interface CreateMergeRequestNoteParams {
 export interface UpdateMergeRequestNoteParams {
 	body: string;
 }
+
+export interface ModifyUserParams {
+	admin?: boolean;
+	auditor?: boolean;
+	avatar?: string;
+	bio?: string;
+	can_create_group?: boolean;
+	color_scheme_id?: number;
+	commit_email?: string;
+	email?: string;
+	extern_uid?: string;
+	external?: boolean;
+	extra_shared_runners_minutes_limit?: number;
+	group_id_for_saml?: number;
+	linkedin?: string;
+	location?: string;
+	name?: string;
+	note?: string;
+	organization?: string;
+	password?: string;
+	private_profile?: boolean;
+	projects_limit?: number;
+	pronouns?: string;
+	provider?: string;
+	public_email?: string;
+	shared_runners_minutes_limit?: number;
+	skip_reconfirmation?: boolean;
+	theme_id?: number;
+	twitter?: string;
+	discord?: string;
+	github?: string;
+	username?: string;
+	view_diffs_file_by_file?: boolean;
+	website_url?: string;
+}

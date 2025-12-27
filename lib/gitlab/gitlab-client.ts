@@ -5,6 +5,7 @@ import type {
 	CurrentUser,
 	GetTodosParams,
 	MergeRequestNote,
+	ModifyUserParams,
 	PersonalAccessToken,
 	Project,
 	Todo,
@@ -319,6 +320,119 @@ export class GitLabClient {
 			{ projectId, mergeRequestIid, noteId },
 			"Merge request note updated",
 		);
+
+		return data;
+	}
+
+	/**
+	 * Modify the current user's profile
+	 * @param params - The user parameters to update
+	 * @returns The updated user information
+	 * @throws Error if the request fails
+	 */
+	async modifyCurrentUser(params: ModifyUserParams): Promise<CurrentUser> {
+		const currentUser = await this.getCurrentUser();
+
+		logger.debug(
+			{ userId: currentUser.id, paramKeys: Object.keys(params) },
+			"Modifying current user profile",
+		);
+
+		const response = await fetch(`${this.apiUrl}/users/${currentUser.id}`, {
+			method: "PUT",
+			headers: {
+				"PRIVATE-TOKEN": this.token,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(params),
+		});
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				logger.error("Invalid GitLab token: 401 Unauthorized");
+				throw new Error("Invalid GitLab token: 401 Unauthorized");
+			}
+			if (response.status === 404) {
+				logger.error({ userId: currentUser.id }, "User not found");
+				throw new Error(`User not found: ${currentUser.id}`);
+			}
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText },
+				"Failed to modify user profile",
+			);
+			throw new Error(
+				`Failed to modify user profile: ${response.status} ${response.statusText}\n${errorText}`,
+			);
+		}
+
+		const data = (await response.json()) as CurrentUser;
+		// Clear the cache so next call to getCurrentUser() fetches fresh data
+		this.currentUserCache = data;
+
+		logger.info({ userId: data.id }, "User profile updated");
+
+		return data;
+	}
+
+	/**
+	 * Upload an avatar for the current user
+	 * @param avatarPath - The file path to the avatar image (must be ≤200 KB, one of: .bmp, .gif, .ico, .jpeg, .png, .tiff)
+	 * @returns Object containing the new avatar URL
+	 * @throws Error if the request fails or file is too large/wrong format
+	 */
+	async uploadCurrentUserAvatar(
+		avatarPath: string,
+	): Promise<{ avatar_url: string }> {
+		logger.debug({ avatarPath }, "Uploading avatar for current user");
+
+		// Create FormData to upload file
+		const formData = new FormData();
+		const file = Bun.file(avatarPath);
+
+		// Check if file exists
+		if (!(await file.exists())) {
+			logger.error({ avatarPath }, "Avatar file not found");
+			throw new Error(`Avatar file not found: ${avatarPath}`);
+		}
+
+		formData.append("avatar", file);
+
+		const response = await fetch(`${this.apiUrl}/user/avatar`, {
+			method: "PUT",
+			headers: {
+				"PRIVATE-TOKEN": this.token,
+			},
+			body: formData,
+		});
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				logger.error("Invalid GitLab token: 401 Unauthorized");
+				throw new Error("Invalid GitLab token: 401 Unauthorized");
+			}
+			if (response.status === 400) {
+				const errorText = await response.text();
+				logger.error(
+					{ error: errorText },
+					"Bad request - check file size/format",
+				);
+				throw new Error(
+					`Bad request - file must be ≤200 KB and one of: .bmp, .gif, .ico, .jpeg, .png, .tiff\n${errorText}`,
+				);
+			}
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText },
+				"Failed to upload avatar",
+			);
+			throw new Error(
+				`Failed to upload avatar: ${response.status} ${response.statusText}\n${errorText}`,
+			);
+		}
+
+		const data = (await response.json()) as { avatar_url: string };
+		logger.info({ avatarUrl: data.avatar_url }, "Avatar uploaded successfully");
 
 		return data;
 	}

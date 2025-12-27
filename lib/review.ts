@@ -17,7 +17,7 @@ export async function reviewMergeRequest(item: Todo) {
 
 	// comment on the merge request
 	await gitlabClient.createMergeRequestNote(item.project.id, item.target.iid, {
-		body: "Bibus bot is reviewing this merge request...",
+		body: "Meow 🐈, I'll start reviewing this merge request...",
 	});
 
 	// get the project, use the url to clone it

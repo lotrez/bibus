@@ -1,6 +1,4 @@
 import { execSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { cloneToTemp, getCurrentBranch } from "./lib/git";
 import logger from "./lib/logger";
 import { createClient, promptAndWaitForResponse } from "./lib/opencode-helper";
@@ -133,8 +131,8 @@ async function createTestMR() {
 				modelID: testModel,
 			});
 
-			// Step 6: Commit all changed files using GitLab API (Files API)
-			logger.info("💾 Step 6: Detecting and committing all changes...");
+			// Step 6: Commit and push all changes using git
+			logger.info("💾 Step 6: Committing and pushing all changes...");
 
 			// Get list of changed files using git status
 			const changedFilesOutput = execSync("git status --porcelain", {
@@ -144,73 +142,42 @@ async function createTestMR() {
 
 			const changedFiles = changedFilesOutput
 				.split("\n")
-				.filter((line) => line.trim())
-				.map((line) => {
-					// Parse git status output: first 2 chars are status, then filename
-					// Example: " M file.ts" or "?? file.ts"
-					const match = line.match(/^.{3}(.+)$/);
-					return match?.[1]?.trim() ?? null;
-				})
-				.filter((file): file is string => file !== null);
+				.filter((line) => line.trim());
 
 			if (changedFiles.length === 0) {
 				logger.info("   ⚠️  No files were changed by OpenCode\n");
 			} else {
 				logger.info(`   ✓ Found ${changedFiles.length} changed file(s):`);
-				for (const file of changedFiles) {
-					logger.info(`     - ${file}`);
+				for (const line of changedFiles) {
+					logger.info(`     ${line}`);
 				}
 				logger.info("");
 
-				// Commit each changed file via GitLab Files API
-				for (const file of changedFiles) {
-					const filePath = path.join(repo.path, file);
-					const fileContent = fs.readFileSync(filePath, "utf-8");
+				// Stage all changes
+				logger.info("   📝 Staging all changes...");
+				execSync("git add -A", {
+					cwd: repo.path,
+					stdio: "inherit",
+				});
 
-					// Check if file exists in the repository (update) or is new (create)
-					const checkFileResponse = await fetch(
-						`${apiUrl}/projects/${testProject}/repository/files/${encodeURIComponent(file)}?ref=${branchName}`,
-						{
-							headers: {
-								"PRIVATE-TOKEN": testToken,
-							},
-						},
-					);
+				// Commit changes
+				logger.info("   📝 Committing changes...");
+				execSync(
+					'git commit -m "chore: add test changes with intentional bugs"',
+					{
+						cwd: repo.path,
+						stdio: "inherit",
+					},
+				);
 
-					const fileExists = checkFileResponse.ok;
-					const method = fileExists ? "PUT" : "POST";
-					const action = fileExists ? "Update" : "Create";
+				// Push to remote
+				logger.info("   📝 Pushing to remote...");
+				execSync(`git push origin ${branchName}`, {
+					cwd: repo.path,
+					stdio: "inherit",
+				});
 
-					logger.info(`   📝 ${action}ing ${file}...`);
-
-					const commitResponse = await fetch(
-						`${apiUrl}/projects/${testProject}/repository/files/${encodeURIComponent(file)}`,
-						{
-							method: method,
-							headers: {
-								"PRIVATE-TOKEN": testToken,
-								"Content-Type": "application/json",
-							},
-							body: JSON.stringify({
-								branch: branchName,
-								content: fileContent,
-								commit_message: `chore: ${action} ${file} with test changes`,
-								encoding: "text",
-							}),
-						},
-					);
-
-					if (!commitResponse.ok) {
-						const errorText = await commitResponse.text();
-						throw new Error(
-							`Failed to commit ${file}: ${commitResponse.status} ${commitResponse.statusText}\n${errorText}`,
-						);
-					}
-
-					logger.info(`      ✓ Committed ${file}`);
-				}
-
-				logger.info(`   ✓ All ${changedFiles.length} file(s) committed\n`);
+				logger.info(`   ✓ All changes committed and pushed\n`);
 			}
 
 			// Step 7: Create merge request
