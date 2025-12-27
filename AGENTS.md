@@ -222,12 +222,11 @@ The review system uses an MCP (Model Context Protocol) server that posts comment
 
 1. Bot detects a mention in a merge request
 2. `reviewMergeRequest()` clones the MR branch to a temp directory
-3. Creates an OpenCode client with MCP server configured:
-   - Passes `projectId` and `mrIid` via environment variables
-   - MCP server receives GitLab credentials from env
-4. AI receives prompt to review the code using git diff
+3. Creates an OpenCode client with MCP server configured
+4. AI receives prompt to review the code using git diff (prompt includes projectId and mrIid)
 5. For each issue found, AI calls `post_review_comment` tool:
-   - Tool call is handled by MCP server (separate process)
+   - Tool call includes projectId and mrIid as parameters
+   - MCP server receives GitLab credentials from env
    - MCP server **immediately** posts comment to GitLab API
    - Returns confirmation to AI
 6. Main process tracks comment count via OpenCode event stream
@@ -237,9 +236,10 @@ The review system uses an MCP (Model Context Protocol) server that posts comment
 
 - **Direct posting in MCP**: Comments are posted immediately when the tool is called, not batched or queued
 - **Separate process**: MCP server runs as independent process, communicates via stdio
-- **Environment context**: Project ID and MR IID passed via environment variables to MCP server
+- **Tool parameters for context**: `projectId` and `mrIid` are passed as tool parameters in each call, NOT as environment variables. This allows the same MCP server to handle multiple MRs.
 - **Real-time feedback**: Each comment appears on GitLab as soon as AI generates it
 - **No callback chain**: Removed callback-based posting from event stream; MCP handles it directly
+- **File logging**: MCP server logs to `mcp-server.log` in the project root for debugging
 
 ### MCP Server Details
 
@@ -248,9 +248,15 @@ The review system uses an MCP (Model Context Protocol) server that posts comment
 - `GITLAB_API_URL` - GitLab API URL (from main process env)
 
 **Tool: `post_review_comment`**
-- Parameters: file, line, severity, comment, suggestedCode, suggestionLinesAbove, suggestionLinesBelow
+- Parameters: projectId, mrIid, file, line, severity, comment, suggestedCode, suggestionLinesAbove, suggestionLinesBelow
+- **IMPORTANT**: projectId and mrIid are required tool parameters, NOT environment variables
 - Action: Formats comment with severity badge and optional code suggestion, posts to GitLab immediately
 - Returns: Confirmation message to AI with posted comment details
+
+**Logging:**
+- MCP server writes logs to `mcp-server.log` in project root
+- Logs include timestamps, log levels (INFO, DEBUG, WARN, ERROR), and structured data
+- Logs are also written to stderr for immediate visibility
 
 ### Error Handling
 
