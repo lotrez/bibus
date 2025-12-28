@@ -9,7 +9,15 @@ import { opencodeModel, opencodeProvider } from "./utils/env-vars.ts";
 import logger from "./utils/logger.ts";
 
 // Get the path to the MCP server script
-const mcpServerPath = path.join(import.meta.dirname, "mcp-review-server.ts");
+const mcpServerPath = path.join(
+	import.meta.dirname,
+	"gitlab/mcp-review-server.ts",
+);
+const mcpExists = await Bun.file(mcpServerPath).exists();
+if (!mcpExists) {
+	throw new Error(`MCP server script not found at path: ${mcpServerPath}`);
+}
+
 // Create server with MCP config
 const server = await createOpencodeServer({
 	port: Math.floor(10000 + Math.random() * 50000),

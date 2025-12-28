@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -10,45 +8,25 @@ import {
 	McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { GitLabClient } from "./gitlab/gitlab-client.ts";
-import type {
-	DiffPosition,
-	MergeRequestVersion,
-} from "./gitlab/gitlab-models.ts";
+import logger from "../utils/logger.ts";
+import { GitLabClient } from "./gitlab-client.ts";
+import type { DiffPosition, MergeRequestVersion } from "./gitlab-models.ts";
 import type { ReviewCommentParams } from "./mcp.model.ts";
 
-// File logging for MCP server debugging
 // IMPORTANT: projectId and mrIid are ALWAYS passed as tool parameters, NOT environment variables
-const LOG_FILE = path.join(import.meta.dirname, "..", "mcp-server.log");
 
-function log(
-	level: "INFO" | "DEBUG" | "ERROR" | "WARN",
-	message: string,
-	data?: Record<string, unknown>,
-) {
-	const timestamp = new Date().toISOString();
-	const dataStr = data ? ` ${JSON.stringify(data)}` : "";
-	const logLine = `[${timestamp}] [${level}] ${message}${dataStr}\n`;
-
-	// Write to file
-	fs.appendFileSync(LOG_FILE, logLine);
-
-	// Also write to stderr for immediate visibility (stderr doesn't interfere with MCP stdio)
-	process.stderr.write(logLine);
-}
-
-log("INFO", "MCP Review Server starting...");
+logger.info("MCP Review Server starting...");
 
 // Validate required environment variables
 const gitlabToken = process.env.GITLAB_TOKEN;
 const gitlabApiUrl = process.env.GITLAB_API_URL || "https://gitlab.com/api/v4";
 
 if (!gitlabToken) {
-	log("ERROR", "Missing required environment variable: GITLAB_TOKEN");
+	logger.error("Missing required environment variable: GITLAB_TOKEN");
 	process.exit(1);
 }
 
-log("INFO", "GitLab client initialized", { apiUrl: gitlabApiUrl });
+logger.info({ apiUrl: gitlabApiUrl }, "GitLab client initialized");
 
 // Initialize GitLab client with validated credentials
 const gitlabClient = new GitLabClient(gitlabApiUrl, gitlabToken);
@@ -90,16 +68,16 @@ async function getMRVersion(
 
 	const cached = mrVersionCache.get(cacheKey);
 	if (cached) {
-		log("DEBUG", "Using cached MR version", { projectId, mrIid });
+		logger.debug({ projectId, mrIid }, "Using cached MR version");
 		return cached;
 	}
 
-	log("DEBUG", "Fetching MR versions from GitLab", { projectId, mrIid });
+	logger.debug({ projectId, mrIid }, "Fetching MR versions from GitLab");
 
 	const versions = await gitlabClient.getMergeRequestVersions(projectId, mrIid);
 
 	if (versions.length === 0 || !versions[0]) {
-		log("ERROR", "No MR versions found", { projectId, mrIid });
+		logger.error({ projectId, mrIid }, "No MR versions found");
 		throw new Error("No MR versions found");
 	}
 
@@ -107,12 +85,15 @@ async function getMRVersion(
 	const latestVersion = versions[0];
 	mrVersionCache.set(cacheKey, latestVersion);
 
-	log("INFO", "Cached MR version", {
-		projectId,
-		mrIid,
-		base: latestVersion.base_commit_sha.substring(0, 8),
-		head: latestVersion.head_commit_sha.substring(0, 8),
-	});
+	logger.info(
+		{
+			projectId,
+			mrIid,
+			base: latestVersion.base_commit_sha.substring(0, 8),
+			head: latestVersion.head_commit_sha.substring(0, 8),
+		},
+		"Cached MR version",
+	);
 
 	return latestVersion;
 }
@@ -123,13 +104,16 @@ async function getMRVersion(
  * @throws {McpError} If posting comment fails
  */
 async function postCommentToGitLab(params: ReviewCommentParams): Promise<void> {
-	log("INFO", "Posting comment to GitLab", {
-		projectId: params.projectId,
-		mrIid: params.mrIid,
-		file: params.file,
-		line: params.line,
-		severity: params.severity,
-	});
+	logger.info(
+		{
+			projectId: params.projectId,
+			mrIid: params.mrIid,
+			file: params.file,
+			line: params.line,
+			severity: params.severity,
+		},
+		"Posting comment to GitLab",
+	);
 
 	const severityEmoji = {
 		critical: "🔴 **CRITICAL**",
@@ -174,11 +158,14 @@ async function postCommentToGitLab(params: ReviewCommentParams): Promise<void> {
 				new_line: params.line,
 			};
 
-			log("DEBUG", "Creating positioned discussion", {
-				file: params.file,
-				line: params.line,
-				position,
-			});
+			logger.debug(
+				{
+					file: params.file,
+					line: params.line,
+					position,
+				},
+				"Creating positioned discussion",
+			);
 
 			await gitlabClient.createMergeRequestDiscussion(
 				params.projectId,
@@ -189,16 +176,22 @@ async function postCommentToGitLab(params: ReviewCommentParams): Promise<void> {
 				},
 			);
 
-			log("INFO", "Posted diff comment", {
-				severity: params.severity,
-				file: params.file,
-				line: params.line,
-			});
+			logger.info(
+				{
+					severity: params.severity,
+					file: params.file,
+					line: params.line,
+				},
+				"Posted diff comment",
+			);
 		} else {
 			// For general or file-level comments, create a non-positioned discussion
-			log("DEBUG", "Creating general discussion", {
-				file: params.file,
-			});
+			logger.debug(
+				{
+					file: params.file,
+				},
+				"Creating general discussion",
+			);
 
 			await gitlabClient.createMergeRequestDiscussion(
 				params.projectId,
@@ -208,18 +201,24 @@ async function postCommentToGitLab(params: ReviewCommentParams): Promise<void> {
 				},
 			);
 
-			log("INFO", "Posted general comment", {
-				severity: params.severity,
-				file: params.file ?? "general",
-			});
+			logger.info(
+				{
+					severity: params.severity,
+					file: params.file ?? "general",
+				},
+				"Posted general comment",
+			);
 		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		log("ERROR", "Failed to post comment to GitLab", {
-			error: message,
-			file: params.file,
-			line: params.line,
-		});
+		logger.error(
+			{
+				error: message,
+				file: params.file,
+				line: params.line,
+			},
+			"Failed to post comment to GitLab",
+		);
 		throw new McpError(
 			ErrorCode.InternalError,
 			`Failed to post comment to GitLab: ${message}`,
@@ -242,7 +241,7 @@ const server = new Server(
 
 // Register tool list handler
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-	log("DEBUG", "Tool list requested");
+	logger.debug("Tool list requested");
 	return {
 		tools: [
 			{
@@ -318,13 +317,16 @@ Example: To suggest changes to lines 10-15 (6 lines total), comment on line 12 a
 
 // Register tool call handler
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-	log("INFO", "Tool call received", {
-		name: request.params.name,
-		arguments: request.params.arguments,
-	});
+	logger.info(
+		{
+			name: request.params.name,
+			arguments: request.params.arguments,
+		},
+		"Tool call received",
+	);
 
 	if (request.params.name !== "post_review_comment") {
-		log("WARN", "Unknown tool requested", { name: request.params.name });
+		logger.warn({ name: request.params.name }, "Unknown tool requested");
 		throw new McpError(
 			ErrorCode.MethodNotFound,
 			`Unknown tool: ${request.params.name}`,
@@ -335,13 +337,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		// Validate and parse tool arguments with Zod
 		const params = reviewCommentSchema.parse(request.params.arguments);
 
-		log("DEBUG", "Parsed tool parameters", {
-			file: params.file,
-			line: params.line,
-			severity: params.severity,
-			projectId: params.projectId,
-			mrIid: params.mrIid,
-		});
+		logger.debug(
+			{
+				file: params.file,
+				line: params.line,
+				severity: params.severity,
+				projectId: params.projectId,
+				mrIid: params.mrIid,
+			},
+			"Parsed tool parameters",
+		);
 
 		// Post comment directly to GitLab
 		await postCommentToGitLab(params);
@@ -360,10 +365,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			response += "- Code suggestion included\n";
 		}
 
-		log("INFO", "Tool call completed successfully", {
-			file: params.file,
-			line: params.line,
-		});
+		logger.info(
+			{
+				file: params.file,
+				line: params.line,
+			},
+			"Tool call completed successfully",
+		);
 
 		return {
 			content: [
@@ -379,7 +387,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			const issues = error.issues
 				.map((issue) => `${issue.path.join(".")}: ${issue.message}`)
 				.join(", ");
-			log("ERROR", "Zod validation error", { issues });
+			logger.error({ issues }, "Zod validation error");
 			throw new McpError(
 				ErrorCode.InvalidParams,
 				`Invalid tool parameters: ${issues}`,
@@ -393,7 +401,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 		// Handle unexpected errors
 		const errorMessage = error instanceof Error ? error.message : String(error);
-		log("ERROR", "Unexpected error in tool call", { error: errorMessage });
+		logger.error({ error: errorMessage }, "Unexpected error in tool call");
 		throw new McpError(
 			ErrorCode.InternalError,
 			`Failed to post comment: ${errorMessage}`,
@@ -403,15 +411,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Graceful shutdown handler
 async function gracefulShutdown(signal: string) {
-	log("INFO", `Received ${signal}, closing MCP server...`);
+	logger.info(`Received ${signal}, closing MCP server...`);
 	try {
 		await server.close();
-		log("INFO", "MCP server closed gracefully");
+		logger.info("MCP server closed gracefully");
 		process.exit(0);
 	} catch (error) {
-		log("ERROR", "Error during shutdown", {
-			error: error instanceof Error ? error.message : String(error),
-		});
+		logger.error(
+			{
+				error: error instanceof Error ? error.message : String(error),
+			},
+			"Error during shutdown",
+		);
 		process.exit(1);
 	}
 }
@@ -421,7 +432,7 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 // Connect with stdio transport
-log("INFO", "Connecting MCP server with stdio transport...");
+logger.info("Connecting MCP server with stdio transport...");
 const transport = new StdioServerTransport();
 await server.connect(transport);
-log("INFO", "MCP server connected and ready");
+logger.info("MCP server connected and ready");

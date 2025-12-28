@@ -64,7 +64,7 @@ export async function reviewMergeRequest(item: Todo) {
 
 The projectId is ${item.project.id} and the merge request IID is ${item.target.iid}.
 
-Do not tell the user what youa re doing, he does not need to know. Just focus on reviewing the code changes.
+Do not tell the user what you are doing, he does not need to know. Just focus on reviewing the code changes.
 
 Your task:
 1. Compare diffs between the source branch and the target branch using git diff
@@ -72,6 +72,8 @@ Your task:
 3. For EACH issue or suggestion you find, call the post_review_comment tool
 
 YOU MUST USE the post_review_comment tool to submit your feedback. This tool will post comments directly to GitLab. Do not write review comments as text - they will be ignored. Only tool calls count.
+
+This tool allows the user to quickly apply your suggestions. It is a very important part of the review process and a great added value.
 
 Tool parameters:
 - severity: "critical" (bugs/security), "warning" (should fix), "suggestion" (nice to have), "praise" (good code)
@@ -113,6 +115,16 @@ Start now: run git diff, then post_review_comment for each finding.`;
 			{ mrIid: item.target.iid, commentCount },
 			"Posted review comments to merge request",
 		);
+
+		if (initialDiscussion)
+			await gitlabClient.replyToDiscussion(
+				item.project.id,
+				item.target.iid,
+				initialDiscussion.id,
+				{
+					body: `Review completed! 🐾 I have posted ${commentCount} review comments. Here is a summary of my review: ${responseText}`,
+				},
+			);
 
 		return { summary: responseText, commentCount };
 	} finally {
