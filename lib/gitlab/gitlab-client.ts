@@ -644,10 +644,10 @@ export class GitLabClient {
 	}
 
 	/**
-	 * Get all discussions for a merge request
+	 * Get all discussions for a merge request (handles pagination automatically)
 	 * @param projectId - The project ID or URL-encoded path
 	 * @param mergeRequestIid - The IID of the merge request
-	 * @returns Array of discussions
+	 * @returns Array of all discussions (fetches all pages)
 	 * @throws Error if the request fails
 	 */
 	async getMergeRequestDiscussions(
@@ -661,44 +661,77 @@ export class GitLabClient {
 			"Fetching merge request discussions",
 		);
 
-		const response = await fetch(
-			`${this.apiUrl}/projects/${encodedId}/merge_requests/${mergeRequestIid}/discussions`,
-			{
+		const allDiscussions: Discussion[] = [];
+		let page = 1;
+		let hasMorePages = true;
+
+		while (hasMorePages) {
+			const url = `${this.apiUrl}/projects/${encodedId}/merge_requests/${mergeRequestIid}/discussions?page=${page}&per_page=20`;
+
+			logger.debug(
+				{ projectId, mergeRequestIid, page },
+				"Fetching discussions page",
+			);
+
+			const response = await fetch(url, {
 				method: "GET",
 				headers: {
 					"PRIVATE-TOKEN": this.token,
 				},
-			},
-		);
+			});
 
-		if (!response.ok) {
-			if (response.status === 401) {
-				logger.error("Invalid GitLab token: 401 Unauthorized");
-				throw new Error("Invalid GitLab token: 401 Unauthorized");
-			}
-			if (response.status === 404) {
-				logger.error({ projectId, mergeRequestIid }, "Project or MR not found");
+			if (!response.ok) {
+				if (response.status === 401) {
+					logger.error("Invalid GitLab token: 401 Unauthorized");
+					throw new Error("Invalid GitLab token: 401 Unauthorized");
+				}
+				if (response.status === 404) {
+					logger.error(
+						{ projectId, mergeRequestIid },
+						"Project or MR not found",
+					);
+					throw new Error(
+						`Project or merge request not found: ${projectId}/!${mergeRequestIid}`,
+					);
+				}
+				const errorText = await response.text();
+				logger.error(
+					{ status: response.status, error: errorText },
+					"Failed to fetch merge request discussions",
+				);
 				throw new Error(
-					`Project or merge request not found: ${projectId}/!${mergeRequestIid}`,
+					`Failed to fetch merge request discussions: ${response.status} ${response.statusText}\n${errorText}`,
 				);
 			}
-			const errorText = await response.text();
-			logger.error(
-				{ status: response.status, error: errorText },
-				"Failed to fetch merge request discussions",
+
+			const data = (await response.json()) as Discussion[];
+			allDiscussions.push(...data);
+
+			logger.debug(
+				{
+					projectId,
+					mergeRequestIid,
+					page,
+					pageCount: data.length,
+					totalCount: allDiscussions.length,
+				},
+				"Discussions page retrieved",
 			);
-			throw new Error(
-				`Failed to fetch merge request discussions: ${response.status} ${response.statusText}\n${errorText}`,
-			);
+
+			// If we got less than 20 results, we've reached the last page
+			if (data.length < 20) {
+				hasMorePages = false;
+			} else {
+				page++;
+			}
 		}
 
-		const data = (await response.json()) as Discussion[];
 		logger.debug(
-			{ projectId, mergeRequestIid, discussionCount: data.length },
-			"Merge request discussions retrieved",
+			{ projectId, mergeRequestIid, discussionCount: allDiscussions.length },
+			"All merge request discussions retrieved",
 		);
 
-		return data;
+		return allDiscussions;
 	}
 
 	/**
