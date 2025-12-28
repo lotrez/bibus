@@ -35,27 +35,19 @@ const gitlabClient = new GitLabClient(gitlabApiUrl, gitlabToken);
 const mrVersionCache: Map<string, MergeRequestVersion> = new Map();
 
 // Define Zod schema for tool input validation
-const reviewCommentSchema = z
-	.object({
-		file: z.string().nullish(),
-		line: z.number().nullish(),
-		severity: z.enum(["critical", "warning", "suggestion", "praise"]),
-		comment: z.string().min(1),
-		suggestedCode: z.string().nullish(),
-		suggestionLinesAbove: z.number().min(0).max(100).nullish(),
-		suggestionLinesBelow: z.number().min(0).max(100).nullish(),
-		projectId: z.number(),
-		mrIid: z.number(),
-	})
-	.transform((data) => ({
-		...data,
-		// Convert undefined to null for optional fields
-		file: data.file ?? null,
-		line: data.line ?? null,
-		suggestedCode: data.suggestedCode ?? null,
-		suggestionLinesAbove: data.suggestionLinesAbove ?? null,
-		suggestionLinesBelow: data.suggestionLinesBelow ?? null,
-	}));
+const reviewCommentSchema = z.object({
+	file: z.string().optional(),
+	line: z.number().optional(),
+	severity: z.enum(["critical", "warning", "suggestion", "praise"]),
+	comment: z.string().min(1),
+	// suggestedCode is optional BUT if you're reporting an issue, you should provide it
+	// Empty string means delete, non-empty means replace
+	suggestedCode: z.string().optional(),
+	suggestionLinesAbove: z.number().int().min(0).max(100).optional(),
+	suggestionLinesBelow: z.number().int().min(0).max(100).optional(),
+	projectId: z.number().int(),
+	mrIid: z.number().int(),
+});
 
 /**
  * Get the latest MR version (cached per project+MR)
@@ -131,8 +123,8 @@ async function postCommentToGitLab(params: ReviewCommentParams): Promise<void> {
 
 	body += `\n\n${params.comment}`;
 
-	// Format GitLab suggestion if provided
-	if (params.suggestedCode && params.file && params.line !== null) {
+	// Format GitLab suggestion if suggestedCode is provided (including empty string for deletion)
+	if (params.suggestedCode !== null && params.file && params.line !== null) {
 		const linesAbove = params.suggestionLinesAbove ?? 0;
 		const linesBelow = params.suggestionLinesBelow ?? 0;
 
@@ -246,33 +238,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 		tools: [
 			{
 				name: "post_review_comment",
-				description: `Post a review comment on the merge request. YOU MUST USE THIS TOOL to submit your review feedback - this is the ONLY way to provide review comments.
+				description: `Post a review comment on the merge request with GitLab's APPLY SUGGESTION button.
 
-Call this tool for EACH issue, suggestion, or piece of feedback you find during your review. Do not write comments in your response text - use this tool instead.
+⚠️ CRITICAL: For EVERY code issue (critical/warning/suggestion), you MUST provide suggestedCode! ⚠️
 
-IMPORTANT: You can post comments on ANY line in the diff - just provide the file path and line number. The tool handles all the GitLab API details automatically.
+How to use suggestedCode (REQUIRED for all issues):
+- To REPLACE code: suggestedCode: "the new corrected code"
+- To DELETE code: suggestedCode: "" (empty string)
+- Multi-line: Add suggestionLinesAbove/Below numbers
 
-For code suggestions, provide the complete replacement code in suggestedCode. This will be formatted as a GitLab suggestion that can be applied with one click.
+Examples:
+1. Replace line 42: { file: "src/x.ts", line: 42, suggestedCode: "const x = 5;" }
+2. DELETE line 42: { file: "src/x.ts", line: 42, suggestedCode: "" }
+3. Delete lines 40-42: { file: "src/x.ts", line: 41, suggestedCode: "", suggestionLinesAbove: 1, suggestionLinesBelow: 1 }
 
-For multi-line suggestions:
-- Set suggestionLinesAbove to the number of lines ABOVE the line number to include (0-100)  
-- Set suggestionLinesBelow to the number of lines BELOW the line number to include (0-100)
-- The suggestedCode should contain the complete replacement for all those lines
-
-Example: To suggest changes to lines 10-15 (6 lines total), comment on line 12 and set suggestionLinesAbove=2, suggestionLinesBelow=3.`,
+⚠️ NEVER EVER omit suggestedCode for issues! Even deletion requires suggestedCode: "" ⚠️
+Only omit suggestedCode for "praise" severity.`,
 				inputSchema: {
 					type: "object",
 					required: ["severity", "comment", "projectId", "mrIid"],
 					properties: {
 						file: {
-							type: ["string", "null"],
+							type: "string",
 							description:
-								"The file path (e.g. 'src/index.ts'), or null for general comments",
+								"The file path (e.g. 'src/index.ts'). Omit for general comments.",
 						},
 						line: {
-							type: ["number", "null"],
+							type: "number",
 							description:
-								"The line number in the NEW version of the file, or null for file-level/general comments",
+								"The line number in the NEW version of the file. Omit for file-level/general comments.",
 						},
 						severity: {
 							type: "string",
@@ -286,27 +280,27 @@ Example: To suggest changes to lines 10-15 (6 lines total), comment on line 12 a
 								"Your review comment text explaining the issue or suggestion",
 						},
 						suggestedCode: {
-							type: ["string", "null"],
+							type: "string",
 							description:
-								"Complete suggested code replacement. Include this when you want to suggest specific code changes. Set to null if no code suggestion.",
+								'⚠️ REQUIRED for ALL issues! ⚠️ Use "" (two quotes, nothing inside) to DELETE. Use actual code to REPLACE. This parameter is MANDATORY for critical/warning/suggestion severity. Only omit for "praise".',
 						},
 						suggestionLinesAbove: {
-							type: ["number", "null"],
+							type: "number",
 							description:
-								"For multi-line suggestions: number of lines above the commented line to replace (0-100, null for single-line)",
+								"For multi-line changes: number of lines ABOVE the commented line to include (0-100). Omit for single-line changes.",
 						},
 						suggestionLinesBelow: {
-							type: ["number", "null"],
+							type: "number",
 							description:
-								"For multi-line suggestions: number of lines below the commented line to replace (0-100, null for single-line)",
+								"For multi-line changes: number of lines BELOW the commented line to include (0-100). Omit for single-line changes.",
 						},
 						projectId: {
 							type: "number",
-							description: "GitLab project ID",
+							description: "GitLab project ID (integer)",
 						},
 						mrIid: {
 							type: "number",
-							description: "Merge request IID",
+							description: "Merge request IID (integer)",
 						},
 					},
 				},
@@ -334,41 +328,70 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	}
 
 	try {
+		// Log raw arguments for debugging
+		logger.debug(
+			{
+				rawArguments: request.params.arguments,
+			},
+			"Raw tool arguments received",
+		);
+
 		// Validate and parse tool arguments with Zod
 		const params = reviewCommentSchema.parse(request.params.arguments);
 
+		// Convert undefined to null for better handling
+		const processedParams: ReviewCommentParams = {
+			file: params.file ?? null,
+			line: params.line ?? null,
+			severity: params.severity,
+			comment: params.comment,
+			suggestedCode: params.suggestedCode ?? null,
+			suggestionLinesAbove: params.suggestionLinesAbove ?? null,
+			suggestionLinesBelow: params.suggestionLinesBelow ?? null,
+			projectId: params.projectId,
+			mrIid: params.mrIid,
+		};
+
 		logger.debug(
 			{
-				file: params.file,
-				line: params.line,
-				severity: params.severity,
-				projectId: params.projectId,
-				mrIid: params.mrIid,
+				file: processedParams.file,
+				line: processedParams.line,
+				severity: processedParams.severity,
+				hasSuggestedCode: processedParams.suggestedCode !== null,
+				suggestedCodeLength: processedParams.suggestedCode?.length ?? 0,
+				suggestionLinesAbove: processedParams.suggestionLinesAbove,
+				suggestionLinesBelow: processedParams.suggestionLinesBelow,
+				projectId: processedParams.projectId,
+				mrIid: processedParams.mrIid,
 			},
 			"Parsed tool parameters",
 		);
 
 		// Post comment directly to GitLab
-		await postCommentToGitLab(params);
+		await postCommentToGitLab(processedParams);
 
 		// Build confirmation response for the AI
 		let response = "Review comment posted to GitLab successfully!\n";
-		response += `- Severity: ${params.severity}\n`;
-		if (params.file) {
-			response += `- File: ${params.file}`;
-			if (params.line !== null) {
-				response += `:${params.line}`;
+		response += `- Severity: ${processedParams.severity}\n`;
+		if (processedParams.file) {
+			response += `- File: ${processedParams.file}`;
+			if (processedParams.line !== null) {
+				response += `:${processedParams.line}`;
 			}
 			response += "\n";
 		}
-		if (params.suggestedCode) {
-			response += "- Code suggestion included\n";
+		if (processedParams.suggestedCode !== null) {
+			if (processedParams.suggestedCode === "") {
+				response += "- Code deletion suggestion included\n";
+			} else {
+				response += "- Code replacement suggestion included\n";
+			}
 		}
 
 		logger.info(
 			{
-				file: params.file,
-				line: params.line,
+				file: processedParams.file,
+				line: processedParams.line,
 			},
 			"Tool call completed successfully",
 		);

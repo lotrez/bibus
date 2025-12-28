@@ -1,9 +1,9 @@
+import * as path from "node:path";
 import {
 	createOpencodeClient,
 	createOpencodeServer,
 	type OpencodeClient,
 } from "@opencode-ai/sdk/v2";
-import * as path from "node:path";
 import type { ReviewCommentParams } from "./gitlab/mcp.model.ts";
 import { opencodeModel, opencodeProvider } from "./utils/env-vars.ts";
 import logger from "./utils/logger.ts";

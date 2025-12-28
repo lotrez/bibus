@@ -73,30 +73,80 @@ Your task:
 
 YOU MUST USE the post_review_comment tool to submit your feedback. This tool will post comments directly to GitLab. Do not write review comments as text - they will be ignored. Only tool calls count.
 
-This tool allows the user to quickly apply your suggestions. It is a very important part of the review process and a great added value.
+⚠️ CRITICAL RULE - ALWAYS PROVIDE suggestedCode ⚠️
+
+For EVERY issue you find (critical, warning, suggestion), you MUST include the suggestedCode parameter! This creates GitLab's "Apply suggestion" button.
+
+How to use suggestedCode:
+1. To REPLACE a line with new code: suggestedCode: "the new code here"
+2. To DELETE a line: suggestedCode: "" (empty string - two quotes with nothing inside)
+3. To replace multiple lines: suggestedCode: "new code" + suggestionLinesAbove/Below numbers
+4. To delete multiple lines: suggestedCode: "" + suggestionLinesAbove/Below numbers
+
+NEVER omit suggestedCode except for "praise" comments! Even if you just want to delete - use ""!
 
 Tool parameters:
-- severity: "critical" (bugs/security), "warning" (should fix), "suggestion" (nice to have), "praise" (good code)
-- file: the file path, or null for general comments
-- line: line number in the file, or null for file-level comments  
-- comment: your review comment explaining the issue
-- suggestedCode: replacement code (optional), or null
-- suggestionLinesAbove/Below: for multi-line replacements (optional)
+- severity: "critical" | "warning" | "suggestion" | "praise"
+- file: the file path (e.g., "src/auth.ts")
+- line: line number in the NEW version of the file
+- comment: your explanation
+- suggestedCode: the replacement code OR "" to delete
+- suggestionLinesAbove: (optional) number of lines above to include
+- suggestionLinesBelow: (optional) number of lines below to include
 
-Example tool call:
+Example 1 - Single line fix (replacing line 42):
 {
   "severity": "warning",
   "file": "src/index.ts",
   "line": 42,
-  "comment": "This variable is never used",
-  "suggestedCode": null,
+  "comment": "Use const instead of let for variables that are never reassigned",
+  "suggestedCode": "const userId = getUserId();",
   "suggestionLinesAbove": null,
   "suggestionLinesBelow": null,
-	"projectId": "${item.project.id}",
-	"mrIid": "${item.target.iid}"
+  "projectId": ${item.project.id},
+  "mrIid": ${item.target.iid}
 }
 
-Start now: run git diff, then post_review_comment for each finding.`;
+Example 2 - Multi-line fix (replacing lines 10-12, commenting on line 11):
+{
+  "severity": "critical",
+  "file": "src/auth.ts",
+  "line": 11,
+  "comment": "Remove password from response to prevent credential exposure",
+  "suggestedCode": "return {\\n  user: { id: user.id, email: user.email },\\n  token\\n};",
+  "suggestionLinesAbove": 1,
+  "suggestionLinesBelow": 1,
+  "projectId": ${item.project.id},
+  "mrIid": ${item.target.iid}
+}
+
+Example 3 - Delete a single line (line 25):
+{
+  "severity": "warning",
+  "file": "src/utils.ts",
+  "line": 25,
+  "comment": "Remove this unused import",
+  "suggestedCode": "",
+  "projectId": ${item.project.id},
+  "mrIid": ${item.target.iid}
+}
+
+Example 4 - Delete multiple lines (lines 23-27, commenting on line 25):
+{
+  "severity": "warning",
+  "file": "src/utils.ts",
+  "line": 25,
+  "comment": "Remove this unused code block",
+  "suggestedCode": "",
+  "suggestionLinesAbove": 2,
+  "suggestionLinesBelow": 2,
+  "projectId": ${item.project.id},
+  "mrIid": ${item.target.iid}
+}
+
+REMEMBER: To delete = use suggestedCode: "" (empty string). This is the correct way to tell GitLab to remove lines.
+
+Start now: run git diff, analyze the changes, then post_review_comment for each finding WITH suggestedCode fixes.`;
 
 		const { responseText, commentCount } = await createReviewSession(
 			opencodeClient,
