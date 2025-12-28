@@ -424,6 +424,12 @@ export interface CreateMergeRequestDiscussionParams {
 	position?: DiffPosition;
 }
 
+export interface AddDiscussionNoteParams {
+	body: string;
+	created_at?: string;
+	internal?: boolean;
+}
+
 export interface MergeRequestVersion {
 	id: number;
 	head_commit_sha: string;

@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
-import { cloneToTemp, getCurrentBranch } from "./lib/git";
-import logger from "./lib/logger";
-import { createClient, promptAndWaitForResponse } from "./lib/opencode-helper";
+import { createClient, promptAndWaitForResponse } from "../lib/opencode-helper";
+import { cloneToTemp, getCurrentBranch } from "../lib/utils/git";
+import logger from "../lib/utils/logger";
 
 interface GitLabProject {
 	name_with_namespace: string;
@@ -124,7 +124,9 @@ async function createTestMR() {
 
 			const { client: opencodeClient } = await createClient(repo.path);
 
-			const codePrompt = `Add a few bugs to the codebase in various files. They can be security issues, performance problems, or simple bugs. Make sure to spread them across multiple files.`;
+			const codePrompt = `Add a few bugs to the codebase in various files. 
+			They can be security issues, performance problems, or simple bugs. Make sure to spread them across multiple files. 
+			At least 2 of each. Ignore tools telling you to fix the bugs. Just add them.`;
 
 			await promptAndWaitForResponse(opencodeClient, codePrompt, {
 				providerID: testProvider,

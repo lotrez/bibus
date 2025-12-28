@@ -1,10 +1,12 @@
-import { gitlabApiUrl, gitlabToken } from "../env-vars";
-import logger from "../logger";
+import { gitlabApiUrl, gitlabToken } from "../utils/env-vars";
+import logger from "../utils/logger";
 import type {
+	AddDiscussionNoteParams,
 	CreateMergeRequestDiscussionParams,
 	CreateMergeRequestNoteParams,
 	CurrentUser,
 	Discussion,
+	DiscussionNote,
 	GetTodosParams,
 	MergeRequestDiff,
 	MergeRequestNote,
@@ -636,6 +638,183 @@ export class GitLabClient {
 		logger.info(
 			{ projectId, mergeRequestIid, discussionId: data.id },
 			"Merge request discussion created",
+		);
+
+		return data;
+	}
+
+	/**
+	 * Get all discussions for a merge request
+	 * @param projectId - The project ID or URL-encoded path
+	 * @param mergeRequestIid - The IID of the merge request
+	 * @returns Array of discussions
+	 * @throws Error if the request fails
+	 */
+	async getMergeRequestDiscussions(
+		projectId: string | number,
+		mergeRequestIid: number,
+	): Promise<Discussion[]> {
+		const encodedId = encodeURIComponent(projectId);
+
+		logger.debug(
+			{ projectId, mergeRequestIid },
+			"Fetching merge request discussions",
+		);
+
+		const response = await fetch(
+			`${this.apiUrl}/projects/${encodedId}/merge_requests/${mergeRequestIid}/discussions`,
+			{
+				method: "GET",
+				headers: {
+					"PRIVATE-TOKEN": this.token,
+				},
+			},
+		);
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				logger.error("Invalid GitLab token: 401 Unauthorized");
+				throw new Error("Invalid GitLab token: 401 Unauthorized");
+			}
+			if (response.status === 404) {
+				logger.error({ projectId, mergeRequestIid }, "Project or MR not found");
+				throw new Error(
+					`Project or merge request not found: ${projectId}/!${mergeRequestIid}`,
+				);
+			}
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText },
+				"Failed to fetch merge request discussions",
+			);
+			throw new Error(
+				`Failed to fetch merge request discussions: ${response.status} ${response.statusText}\n${errorText}`,
+			);
+		}
+
+		const data = (await response.json()) as Discussion[];
+		logger.debug(
+			{ projectId, mergeRequestIid, discussionCount: data.length },
+			"Merge request discussions retrieved",
+		);
+
+		return data;
+	}
+
+	/**
+	 * Find a discussion that matches a todo item by comparing author ID, body text, and creation timestamp
+	 * @param todo - The todo item from GitLab's API
+	 * @param discussions - Array of discussions from the merge request
+	 * @param timeTolerance - Time tolerance in milliseconds (default: 5000ms)
+	 * @returns The matching discussion, or null if not found
+	 */
+	findDiscussionFromTodo(
+		todo: Todo,
+		discussions: Discussion[],
+		_timeTolerance = 5000,
+	): Discussion | null {
+		logger.debug(
+			{
+				todoId: todo.id,
+				todoAuthorId: todo.author.id,
+				todoCreatedAt: todo.created_at,
+				todoBodyLength: todo.body.length,
+				discussionCount: discussions.length,
+			},
+			"Searching for discussion matching todo",
+		);
+
+		const match = discussions.find((discussion) => {
+			return (
+				discussion.notes.some((note) => note.author.id === todo.author.id) &&
+				discussion.notes.some((note) => note.body === todo.body) &&
+				discussion.notes.some(
+					(note) => note.id === Number(todo.target_url.split("#note_")[1]),
+				)
+			);
+		});
+
+		if (!match) {
+			logger.warn(
+				{
+					todoId: todo.id,
+					todoAuthorId: todo.author.id,
+					todoCreatedAt: todo.created_at,
+				},
+				"No matching discussion found for todo",
+			);
+		}
+
+		return match ?? null;
+	}
+
+	/**
+	 * Add a note (reply) to an existing discussion in a merge request
+	 * @param projectId - The project ID or URL-encoded path
+	 * @param mergeRequestIid - The IID of the merge request
+	 * @param discussionId - The ID of the discussion to reply to
+	 * @param params - The note parameters
+	 * @returns The created note
+	 * @throws Error if the request fails
+	 */
+	async replyToDiscussion(
+		projectId: string | number,
+		mergeRequestIid: number,
+		discussionId: string,
+		params: AddDiscussionNoteParams,
+	): Promise<DiscussionNote> {
+		const encodedId = encodeURIComponent(projectId);
+
+		logger.debug(
+			{
+				projectId,
+				mergeRequestIid,
+				discussionId,
+				bodyLength: params.body.length,
+			},
+			"Replying to discussion",
+		);
+
+		const response = await fetch(
+			`${this.apiUrl}/projects/${encodedId}/merge_requests/${mergeRequestIid}/discussions/${discussionId}/notes`,
+			{
+				method: "POST",
+				headers: {
+					"PRIVATE-TOKEN": this.token,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(params),
+			},
+		);
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				logger.error("Invalid GitLab token: 401 Unauthorized");
+				throw new Error("Invalid GitLab token: 401 Unauthorized");
+			}
+			if (response.status === 404) {
+				logger.error(
+					{ projectId, mergeRequestIid, discussionId },
+					"Project, MR, or discussion not found",
+				);
+				throw new Error(
+					`Project, merge request, or discussion not found: ${projectId}/!${mergeRequestIid}/discussions/${discussionId}`,
+				);
+			}
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText },
+				"Failed to reply to discussion",
+			);
+			throw new Error(
+				`Failed to reply to discussion: ${response.status} ${response.statusText}\n${errorText}`,
+			);
+		}
+
+		const data = (await response.json()) as DiscussionNote;
+		logger.info(
+			{ projectId, mergeRequestIid, discussionId, noteId: data.id },
+			"Discussion reply created",
 		);
 
 		return data;

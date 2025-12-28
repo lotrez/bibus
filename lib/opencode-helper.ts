@@ -4,9 +4,9 @@ import {
 	type OpencodeClient,
 } from "@opencode-ai/sdk/v2";
 import * as path from "node:path";
-import { opencodeModel, opencodeProvider } from "./env-vars.ts";
-import logger from "./logger.ts";
-import type { ReviewCommentParams } from "./mcp.model.ts";
+import type { ReviewCommentParams } from "./gitlab/mcp.model.ts";
+import { opencodeModel, opencodeProvider } from "./utils/env-vars.ts";
+import logger from "./utils/logger.ts";
 
 // Get the path to the MCP server script
 const mcpServerPath = path.join(import.meta.dirname, "mcp-review-server.ts");

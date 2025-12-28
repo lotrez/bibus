@@ -1,5 +1,5 @@
 import { gitlabClient } from "../..";
-import logger from "../logger";
+import logger from "../utils/logger";
 
 export const updateProfile = async () => {
 	logger.info("Updating bot profile...");

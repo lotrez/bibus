@@ -1,8 +1,8 @@
 import { gitlabClient } from "../index.ts";
-import { cloneToTemp } from "./git.ts";
 import type { Todo } from "./gitlab/gitlab-models.ts";
-import logger from "./logger.ts";
 import { createClient, createReviewSession } from "./opencode-helper.ts";
+import { cloneToTemp } from "./utils/git.ts";
+import logger from "./utils/logger.ts";
 
 export async function reviewMergeRequest(item: Todo) {
 	logger.info(
@@ -16,10 +16,28 @@ export async function reviewMergeRequest(item: Todo) {
 	);
 
 	// comment on the merge request
+	const mrDiscussions = await gitlabClient.getMergeRequestDiscussions(
+		item.project.id,
+		item.target.iid,
+	);
+	logger.debug(
+		{ discussionCount: mrDiscussions.length },
+		"Fetched merge request discussions",
+	);
+	const initialDiscussion = await gitlabClient.findDiscussionFromTodo(
+		item,
+		mrDiscussions,
+	);
 	// reenable when finished dev, do not post yet to not disable the todo
-	// await gitlabClient.createMergeRequestNote(item.project.id, item.target.iid, {
-	// 	body: "Meow 🐈, I'll start reviewing this merge request...",
-	// });
+	if (initialDiscussion)
+		await gitlabClient.replyToDiscussion(
+			item.project.id,
+			item.target.iid,
+			initialDiscussion.id,
+			{
+				body: "Meow 🐈, I'll start reviewing this merge request...",
+			},
+		);
 
 	// get the project, use the url to clone it
 	const projectDetails = await gitlabClient.getProject(item.project.id);
@@ -49,7 +67,7 @@ The projectId is ${item.project.id} and the merge request IID is ${item.target.i
 Do not tell the user what youa re doing, he does not need to know. Just focus on reviewing the code changes.
 
 Your task:
-1. Run "git diff ${item.target.target_branch}...HEAD" to see what changed
+1. Compare diffs between the source branch and the target branch using git diff
 2. Read any files that need closer inspection
 3. For EACH issue or suggestion you find, call the post_review_comment tool
 
