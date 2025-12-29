@@ -6,7 +6,8 @@
 			"prompt": "You are a message type classifier. Given a user's message, classify it into one the types given in your prompt.",
 			"tools": {
 				"write": false,
-				"edit": false
+				"edit": false,
+				"read": false
 			}
 		},
 		"question-answerer": {

@@ -69,10 +69,10 @@ export async function answerQuestion(item: Todo): Promise<string> {
 		// Create OpenCode client with the cloned repository
 		const { client: opencodeClient } = await createClient(cloneResult.path);
 
-		// Build the prompt with the user's question and context about the MR
-		const prompt = `@question-answerer
+	// Build the prompt with the user's question and context about the MR
+	const prompt = `@question-answerer
 
-The user asked you the following question in a GitLab merge request discussion:
+The user asked a question via this message in a GitLab merge request discussion:
 
 "${item.body}"
 
