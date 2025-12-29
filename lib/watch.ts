@@ -1,9 +1,10 @@
 import { currentUser, gitlabClient } from "..";
+import { determineMessageType } from "./opencode/message-router";
 import { reviewMergeRequest } from "./opencode/review";
 import logger from "./utils/logger";
 
 const POLLING_INTERVAL_MS = 5000;
-const AVAILABLE_COMMANDS = ["review"] as const;
+export const AVAILABLE_COMMANDS = ["review", "general_question"] as const;
 
 // Keep track of MRs currently being processed to avoid duplicate work
 const MRS_IN_PROGRESS = new Set<number>();
@@ -26,23 +27,46 @@ async function detectCommands() {
 			"Direct mentions found",
 		);
 	}
-	const validRequests = mentions.filter((item) => {
-		// check if the comment has one of the available commands
-		const body = item.body?.toLowerCase() || "";
-		return AVAILABLE_COMMANDS.some((command) => body.includes(command));
-	});
-	// process each valid request
+
+	// for each message, ask the ai to classify it and then process accordingly
 	await Promise.allSettled(
-		validRequests
-			.filter((item) => !MRS_IN_PROGRESS.has(item.target.id))
-			.map((item) => {
-				MRS_IN_PROGRESS.add(item.target.id);
-				return reviewMergeRequest(item).finally(() => {
-					MRS_IN_PROGRESS.delete(item.target.id);
-				});
-			}),
+		mentions.map(async (item) => {
+			if (MRS_IN_PROGRESS.has(item.target.id)) {
+				logger.debug(
+					{
+						mrIid: item.target.iid,
+						projectId: item.project.id,
+					},
+					"MR already in progress, skipping",
+				);
+				return;
+			}
+			if (!item.body) return;
+			MRS_IN_PROGRESS.add(item.target.id);
+			const type = await determineMessageType(item.body || "");
+			switch (type) {
+				case "review":
+					await reviewMergeRequest(item);
+					break;
+				case "general_question":
+					logger.info(
+						{
+							mrIid: item.target.iid,
+							projectId: item.project.id,
+						},
+						"General question detected - no action taken yet",
+					);
+					// Future implementation for general questions can go here
+					break;
+				default:
+					logger.warn(
+						{ type, mrIid: item.target.iid },
+						"Unknown message type detected",
+					);
+			}
+			MRS_IN_PROGRESS.delete(item.target.id);
+		}),
 	);
-	logger.trace({ count: validRequests.length }, "Review requests found");
 }
 
 export async function startWatching() {

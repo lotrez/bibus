@@ -18,10 +18,22 @@ if (!mcpExists) {
 	throw new Error(`MCP server script not found at path: ${mcpServerPath}`);
 }
 
+const agentConfigPath = path.join(
+	import.meta.dirname,
+	"../../config/agents.json",
+);
+const agentConfigExists = await Bun.file(agentConfigPath).exists();
+if (!agentConfigExists) {
+	throw new Error(
+		`OpenCode agent config not found at path: ${agentConfigPath}`,
+	);
+}
+
 // Create server with MCP config
 const server = await createOpencodeServer({
 	port: Math.floor(10000 + Math.random() * 50000),
 	config: {
+		agent: await Bun.file(agentConfigPath).json(),
 		mcp: {
 			"bibus-review": {
 				type: "local",
