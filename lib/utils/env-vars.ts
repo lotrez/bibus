@@ -1,3 +1,5 @@
+import logger from "./logger.ts";
+
 const GITLAB_TOKEN = process.env.GITLAB_TOKEN;
 const GITLAB_API_URL = process.env.GITLAB_API_URL;
 const OPENCODE_PROVIDER = process.env.OPENCODE_PROVIDER;
@@ -20,9 +22,7 @@ if (!OPENCODE_MODEL) {
 }
 
 if (missingVars.length > 0) {
-	console.error(
-		`Error: Missing required environment variables: ${missingVars.join(", ")}`,
-	);
+	logger.fatal({ missingVars }, "Missing required environment variables");
 	process.exit(1);
 }
 

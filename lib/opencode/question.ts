@@ -70,7 +70,9 @@ export async function answerQuestion(item: Todo): Promise<string> {
 		const { client: opencodeClient } = await createClient(cloneResult.path);
 
 		// Build the prompt with the user's question and context about the MR
-		const prompt = `You are a helpful assistant. The user asked you the following question in a GitLab merge request discussion:
+		const prompt = `@question-answerer
+
+The user asked you the following question in a GitLab merge request discussion:
 
 "${item.body}"
 
@@ -84,8 +86,7 @@ You have access to the repository code on the source branch. You can:
 2. Use git commands to see diffs or history
 3. Search through the codebase
 
-Please provide a clear, concise answer to their question. If the question is about code, make sure to examine the relevant files. 
-Keep your response friendly and professional.
+Please provide a clear, concise answer to their question. If the question is about code, make sure to examine the relevant files.
 Your answer will be posted directly in the merge request discussion. Do not talk about what you are doing, just provide the answer.`;
 
 		logger.debug(
