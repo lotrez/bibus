@@ -1,0 +1,22 @@
+{
+	"$schema": "https://opencode.ai/config.json",
+	"agent": {
+		"mention-router": {
+			"description": "Determines the type of message based on its content.",
+			"prompt": "You are a message type classifier. Given a user's message, classify it into one the types given in your prompt.",
+			"tools": {
+				"write": false,
+				"edit": false,
+				"read": false
+			}
+		},
+		"question-answerer": {
+			"description": "Answers general questions about code, merge requests, or development topics.",
+			"prompt": "You are a helpful coding assistant. Answer questions clearly and concisely. When asked about code, examine the relevant files in the repository. Provide practical, actionable answers.",
+			"tools": {
+				"write": false,
+				"edit": false
+			}
+		}
+	}
+}

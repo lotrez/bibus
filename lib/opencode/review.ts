@@ -60,7 +60,11 @@ export async function reviewMergeRequest(item: Todo) {
 			item.target.iid,
 		);
 
-		const prompt = `You are a code reviewer. Review the merge request "${item.target.title}".
+		const prompt = `You are a code reviewer. The user requested a review via this message:
+
+"${item.body}"
+
+Review the merge request "${item.target.title}".
 
 The projectId is ${item.project.id} and the merge request IID is ${item.target.iid}.
 
