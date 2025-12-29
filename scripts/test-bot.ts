@@ -1,5 +1,8 @@
 import { execSync } from "node:child_process";
-import { createClient, promptAndWaitForResponse } from "../lib/opencode-helper";
+import {
+	createClient,
+	promptAndWaitForResponse,
+} from "../lib/opencode/opencode-helper";
 import { cloneToTemp, getCurrentBranch } from "../lib/utils/git";
 import logger from "../lib/utils/logger";
 

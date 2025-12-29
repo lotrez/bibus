@@ -1,4 +1,4 @@
-import { server } from "../opencode-helper";
+import { server } from "../opencode/opencode-helper";
 import logger from "./logger";
 
 let isShuttingDown = false;

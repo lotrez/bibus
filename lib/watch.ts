@@ -1,5 +1,5 @@
 import { currentUser, gitlabClient } from "..";
-import { reviewMergeRequest } from "./review";
+import { reviewMergeRequest } from "./opencode/review";
 import logger from "./utils/logger";
 
 const POLLING_INTERVAL_MS = 5000;

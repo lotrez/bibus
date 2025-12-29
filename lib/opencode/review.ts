@@ -1,8 +1,8 @@
-import { gitlabClient } from "../index.ts";
-import type { Todo } from "./gitlab/gitlab-models.ts";
+import { gitlabClient } from "../../index.ts";
+import type { Todo } from "../gitlab/gitlab-models.ts";
+import { cloneToTemp } from "../utils/git.ts";
+import logger from "../utils/logger.ts";
 import { createClient, createReviewSession } from "./opencode-helper.ts";
-import { cloneToTemp } from "./utils/git.ts";
-import logger from "./utils/logger.ts";
 
 export async function reviewMergeRequest(item: Todo) {
 	logger.info(
@@ -146,7 +146,9 @@ Example 4 - Delete multiple lines (lines 23-27, commenting on line 25):
 
 REMEMBER: To delete = use suggestedCode: "" (empty string). This is the correct way to tell GitLab to remove lines.
 
-Start now: run git diff, analyze the changes, then post_review_comment for each finding WITH suggestedCode fixes.`;
+Start now: run git diff, analyze the changes, then post_review_comment for each finding WITH suggestedCode fixes.
+Your final response must be a brief summary of the review actions you took. Do NOT include any review comments in the final response - those are already posted via the tool calls. Only summarize your actions.
+`;
 
 		const { responseText, commentCount } = await createReviewSession(
 			opencodeClient,
@@ -172,7 +174,7 @@ Start now: run git diff, analyze the changes, then post_review_comment for each 
 				item.target.iid,
 				initialDiscussion.id,
 				{
-					body: `Review completed! 🐾 I have posted ${commentCount} review comments. Here is a summary of my review: ${responseText}`,
+					body: `Review completed! 🐾 ${responseText}`,
 				},
 			);
 
