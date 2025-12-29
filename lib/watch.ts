@@ -3,8 +3,9 @@ import { determineMessageType } from "./opencode/message-router";
 import { answerQuestion } from "./opencode/question.ts";
 import { reviewMergeRequest } from "./opencode/review";
 import logger from "./utils/logger";
+import { pollingIntervalMs } from "./utils/env-vars.ts";
 
-const POLLING_INTERVAL_MS = 5000;
+const POLLING_INTERVAL_MS = pollingIntervalMs;
 export const AVAILABLE_COMMANDS = ["review", "general_question"] as const;
 
 // Keep track of MRs currently being processed to avoid duplicate work

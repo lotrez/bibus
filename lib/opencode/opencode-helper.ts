@@ -5,7 +5,11 @@ import {
 } from "@opencode-ai/sdk/v2";
 import * as path from "node:path";
 import type { ReviewCommentParams } from "../gitlab/mcp.model.ts";
-import { opencodeModel, opencodeProvider } from "../utils/env-vars.ts";
+import {
+	opencodeModel,
+	opencodePort,
+	opencodeProvider,
+} from "../utils/env-vars.ts";
 import logger from "../utils/logger.ts";
 
 // Get the path to the MCP server script
@@ -31,7 +35,7 @@ if (!agentConfigExists) {
 
 // Create server with MCP config
 const server = await createOpencodeServer({
-	port: Math.floor(10000 + Math.random() * 50000),
+	port: opencodePort,
 	config: {
 		agent: await Bun.file(agentConfigPath).json(),
 		mcp: {
