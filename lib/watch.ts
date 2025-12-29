@@ -1,5 +1,6 @@
 import { currentUser, gitlabClient } from "..";
 import { determineMessageType } from "./opencode/message-router";
+import { answerQuestion } from "./opencode/question.ts";
 import { reviewMergeRequest } from "./opencode/review";
 import logger from "./utils/logger";
 
@@ -49,14 +50,7 @@ async function detectCommands() {
 					await reviewMergeRequest(item);
 					break;
 				case "general_question":
-					logger.info(
-						{
-							mrIid: item.target.iid,
-							projectId: item.project.id,
-						},
-						"General question detected - no action taken yet",
-					);
-					// Future implementation for general questions can go here
+					await answerQuestion(item);
 					break;
 				default:
 					logger.warn(
