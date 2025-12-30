@@ -2,7 +2,11 @@ import { gitlabClient } from "../../index.ts";
 import type { Todo } from "../gitlab/gitlab-models.ts";
 import { cloneToTemp } from "../utils/git.ts";
 import logger from "../utils/logger.ts";
-import { createClient, promptAndWaitForResponse } from "./opencode-helper.ts";
+import {
+	buildConversationHistory,
+	createClient,
+	promptAndWaitForResponse,
+} from "./opencode-helper.ts";
 
 /**
  * Answer a general question by creating an OpenCode session
@@ -43,7 +47,7 @@ export async function answerQuestion(item: Todo): Promise<string> {
 	}
 
 	// Reply to acknowledge we're working on it
-	await gitlabClient.replyToDiscussion(
+	const initialNote = await gitlabClient.replyToDiscussion(
 		item.project.id,
 		item.target.iid,
 		initialDiscussion.id,
@@ -51,6 +55,7 @@ export async function answerQuestion(item: Todo): Promise<string> {
 			body: "Meow 🐈, let me think about that...",
 		},
 	);
+	const initialNoteId = initialNote.id;
 
 	// Get the project details and clone the merge request branch
 	const projectDetails = await gitlabClient.getProject(item.project.id);
@@ -60,7 +65,7 @@ export async function answerQuestion(item: Todo): Promise<string> {
 	);
 
 	// Clone the merge request branch
-	const cloneResult = cloneToTemp(
+	const cloneResult = await cloneToTemp(
 		projectDetails.http_url_to_repo,
 		item.target.source_branch,
 	);
@@ -69,8 +74,20 @@ export async function answerQuestion(item: Todo): Promise<string> {
 		// Create OpenCode client with the cloned repository
 		const { client: opencodeClient } = await createClient(cloneResult.path);
 
-	// Build the prompt with the user's question and context about the MR
-	const prompt = `@question-answerer
+		// Extract the note ID from the target URL (format: ...#note_123)
+		const noteIdMatch = item.target_url.match(/#note_(\d+)$/);
+		const currentNoteId = noteIdMatch ? Number(noteIdMatch[1]) : null;
+
+		// Build conversation history from the discussion notes
+		const botUsername = (await gitlabClient.getCurrentUser()).username;
+		const { conversationHistory, hasHistory } = buildConversationHistory(
+			initialDiscussion,
+			botUsername,
+			currentNoteId, // Exclude current message to avoid duplication
+		);
+
+		// Build the prompt with the user's question and context about the MR
+		let prompt = `@question-answerer
 
 The user asked a question via this message in a GitLab merge request discussion:
 
@@ -79,18 +96,38 @@ The user asked a question via this message in a GitLab merge request discussion:
 Context:
 - Merge request: "${item.target.title}"
 - Source branch: ${item.target.source_branch}
-- Target branch: ${item.target.target_branch || "unknown"}
+- Target branch: ${item.target.target_branch || "unknown"}`;
+
+		// Add conversation history if this is not the first response
+		if (hasHistory) {
+			prompt += `
+
+Previous conversation in this discussion:
+${conversationHistory}
+
+`;
+		}
+
+		prompt += `
 
 You have access to the repository code on the source branch. You can:
 1. Read files to understand the code
 2. Use git commands to see diffs or history
 3. Search through the codebase
 
+IMPORTANT - FORMATTING YOUR ANSWER:
+Your answer will be posted directly to a GitLab comment and must be formatted as plain markdown WITHOUT code fences.
+- Do NOT wrap your response in triple backticks (\`\`\`markdown)
+- Do NOT add "markdown" language tags
+- Just write plain markdown text that will render correctly in GitLab
+- Use markdown formatting (bold, lists, code blocks for code snippets, etc.) directly in your response
+- For code snippets, use single backticks or triple backticks with the language name (e.g., \`\`\`typescript)
+
 Please provide a clear, concise answer to their question. If the question is about code, make sure to examine the relevant files.
-Your answer will be posted directly in the merge request discussion. Do not talk about what you are doing, just provide the answer.`;
+Do not talk about what you are doing, just provide the answer.`;
 
 		logger.debug(
-			{ question: item.body.substring(0, 100) },
+			{ question: item.body, prompt },
 			"Sending question to OpenCode",
 		);
 
@@ -105,11 +142,11 @@ Your answer will be posted directly in the merge request discussion. Do not talk
 			"Question answered by AI",
 		);
 
-		// Reply to the discussion with the answer
-		await gitlabClient.replyToDiscussion(
+		// Update the initial message with the answer
+		await gitlabClient.updateMergeRequestNote(
 			item.project.id,
 			item.target.iid,
-			initialDiscussion.id,
+			initialNoteId,
 			{
 				body: `${answer}`,
 			},
@@ -117,7 +154,7 @@ Your answer will be posted directly in the merge request discussion. Do not talk
 
 		logger.info(
 			{ mrIid: item.target.iid, discussionId: initialDiscussion.id },
-			"Posted answer to discussion",
+			"Updated message with answer",
 		);
 
 		return answer;
@@ -148,7 +185,7 @@ Your answer will be posted directly in the merge request discussion. Do not talk
 		try {
 			// Small delay to ensure all file handles are released
 			await new Promise((resolve) => setTimeout(resolve, 100));
-			cloneResult.cleanup();
+			await cloneResult.cleanup();
 		} catch (cleanupError) {
 			logger.warn(
 				{

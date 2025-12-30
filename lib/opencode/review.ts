@@ -2,7 +2,11 @@ import { gitlabClient } from "../../index.ts";
 import type { Todo } from "../gitlab/gitlab-models.ts";
 import { cloneToTemp } from "../utils/git.ts";
 import logger from "../utils/logger.ts";
-import { createClient, createReviewSession } from "./opencode-helper.ts";
+import {
+	buildConversationHistory,
+	createClient,
+	createReviewSession,
+} from "./opencode-helper.ts";
 
 export async function reviewMergeRequest(item: Todo) {
 	logger.info(
@@ -29,8 +33,9 @@ export async function reviewMergeRequest(item: Todo) {
 		mrDiscussions,
 	);
 	// reenable when finished dev, do not post yet to not disable the todo
-	if (initialDiscussion)
-		await gitlabClient.replyToDiscussion(
+	let initialNoteId: number | null = null;
+	if (initialDiscussion) {
+		const initialNote = await gitlabClient.replyToDiscussion(
 			item.project.id,
 			item.target.iid,
 			initialDiscussion.id,
@@ -38,6 +43,8 @@ export async function reviewMergeRequest(item: Todo) {
 				body: "Meow 🐈, I'll start reviewing this merge request...",
 			},
 		);
+		initialNoteId = initialNote.id;
+	}
 
 	// get the project, use the url to clone it
 	const projectDetails = await gitlabClient.getProject(item.project.id);
@@ -47,7 +54,7 @@ export async function reviewMergeRequest(item: Todo) {
 	);
 
 	// clone the merge request
-	const cloneResult = cloneToTemp(
+	const cloneResult = await cloneToTemp(
 		projectDetails.http_url_to_repo,
 		item.target.source_branch,
 	);
@@ -60,13 +67,39 @@ export async function reviewMergeRequest(item: Todo) {
 			item.target.iid,
 		);
 
-		const prompt = `You are a code reviewer. The user requested a review via this message:
+		// Extract the note ID from the target URL (format: ...#note_123)
+		const noteIdMatch = item.target_url.match(/#note_(\d+)$/);
+		const currentNoteId = noteIdMatch ? Number(noteIdMatch[1]) : null;
+
+		// Build conversation history from the discussion notes
+		const botUsername = (await gitlabClient.getCurrentUser()).username;
+		const { conversationHistory, hasHistory } = initialDiscussion
+			? buildConversationHistory(
+					initialDiscussion,
+					botUsername,
+					currentNoteId, // Exclude current message to avoid duplication
+				)
+			: { conversationHistory: "", hasHistory: false };
+
+		let prompt = `You are a code reviewer. The user requested a review via this message:
 
 "${item.body}"
 
 Review the merge request "${item.target.title}".
 
-The projectId is ${item.project.id} and the merge request IID is ${item.target.iid}.
+The projectId is ${item.project.id} and the merge request IID is ${item.target.iid}.`;
+
+		// Add conversation history if this is not the first response
+		if (hasHistory) {
+			prompt += `
+
+Previous conversation in this discussion:
+${conversationHistory}
+
+`;
+		}
+
+		prompt += `
 
 Do not tell the user what you are doing, he does not need to know. Just focus on reviewing the code changes.
 
@@ -151,8 +184,18 @@ Example 4 - Delete multiple lines (lines 23-27, commenting on line 25):
 REMEMBER: To delete = use suggestedCode: "" (empty string). This is the correct way to tell GitLab to remove lines.
 
 Start now: run git diff, analyze the changes, then post_review_comment for each finding WITH suggestedCode fixes.
+
+IMPORTANT - FORMATTING YOUR FINAL RESPONSE:
+Your final response will be posted directly to a GitLab comment and must be formatted as plain markdown WITHOUT code fences.
+- Do NOT wrap your response in triple backticks (\`\`\`markdown)
+- Do NOT add "markdown" language tags
+- Just write plain markdown text that will render correctly in GitLab
+- Use markdown formatting (bold, lists, etc.) directly in your response
+
 Your final response must be a brief summary of the review actions you took. Do NOT include any review comments in the final response - those are already posted via the tool calls. Only summarize your actions.
 `;
+
+		logger.debug({ prompt }, "Sending review request to OpenCode");
 
 		const { responseText, commentCount } = await createReviewSession(
 			opencodeClient,
@@ -172,15 +215,16 @@ Your final response must be a brief summary of the review actions you took. Do N
 			"Posted review comments to merge request",
 		);
 
-		if (initialDiscussion)
-			await gitlabClient.replyToDiscussion(
+		if (initialDiscussion && initialNoteId) {
+			await gitlabClient.updateMergeRequestNote(
 				item.project.id,
 				item.target.iid,
-				initialDiscussion.id,
+				initialNoteId,
 				{
 					body: `Review completed! 🐾 ${responseText}`,
 				},
 			);
+		}
 
 		return { summary: responseText, commentCount };
 	} finally {
@@ -188,7 +232,7 @@ Your final response must be a brief summary of the review actions you took. Do N
 		try {
 			// Small delay to ensure all file handles are released
 			await new Promise((resolve) => setTimeout(resolve, 100));
-			cloneResult.cleanup();
+			await cloneResult.cleanup();
 		} catch (cleanupError) {
 			logger.warn(
 				{

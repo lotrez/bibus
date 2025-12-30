@@ -1,9 +1,10 @@
+import path from "node:path";
 import {
 	createOpencodeClient,
 	createOpencodeServer,
 	type OpencodeClient,
 } from "@opencode-ai/sdk/v2";
-import * as path from "node:path";
+import type { Discussion } from "../gitlab/gitlab-models.ts";
 import type { ReviewCommentParams } from "../gitlab/mcp.model.ts";
 import {
 	opencodeModel,
@@ -55,7 +56,7 @@ const createClient = async (
 ) => {
 	logger.info(
 		{ url: server.url, mcpServer: mcpServerPath, projectId, mrIid },
-		"OpenCode server started with MCP review tool",
+		"Creating OpenCode client with MCP review tool",
 	);
 
 	const client = createOpencodeClient({
@@ -87,10 +88,7 @@ async function promptAndWaitForResponse(
 		modelID: opencodeModel,
 	};
 
-	logger.debug(
-		{ prompt: prompt.substring(0, 100), model: modelConfig },
-		"Sending prompt to OpenCode",
-	);
+	logger.debug({ prompt, model: modelConfig }, "Sending prompt to OpenCode");
 
 	// Create session
 	const session = await client.session.create();
@@ -136,10 +134,7 @@ async function promptAndWaitForResponse(
 						{
 							tool: part.tool,
 							input: part.state.input,
-							output:
-								typeof part.state.output === "string"
-									? part.state.output.substring(0, 200)
-									: part.state.output,
+							output: part.state.output,
 						},
 						"Tool executed",
 					);
@@ -221,10 +216,7 @@ async function createReviewSession(
 		modelID: opencodeModel,
 	};
 
-	logger.debug(
-		{ prompt: prompt.substring(0, 100), model: modelConfig },
-		"Creating review session",
-	);
+	logger.debug({ prompt, model: modelConfig }, "Creating review session");
 
 	// Create session
 	const session = await client.session.create();
@@ -304,10 +296,7 @@ async function createReviewSession(
 						logger.debug(
 							{
 								tool: part.tool,
-								output:
-									typeof part.state.output === "string"
-										? part.state.output.substring(0, 200)
-										: part.state.output,
+								output: part.state.output,
 							},
 							"Tool completed",
 						);
@@ -372,4 +361,89 @@ async function createReviewSession(
 	};
 }
 
-export { createClient, createReviewSession, promptAndWaitForResponse, server };
+/**
+ * Build conversation history from discussion notes
+ * @param discussion - The discussion containing notes
+ * @param botUsername - The username of the bot
+ * @param currentNoteId - The ID of the current note to exclude from history (to avoid duplication)
+ * @param maxMessages - Maximum number of messages to include in history (default: 10)
+ * @returns Object with conversation history string and whether it exists
+ */
+function buildConversationHistory(
+	discussion: Discussion,
+	botUsername: string,
+	currentNoteId: number | null,
+	maxMessages = 10,
+): { conversationHistory: string; hasHistory: boolean } {
+	// Filter out system notes and sort by creation time (chronological order)
+	let nonSystemNotes = discussion.notes
+		.filter((note) => !note.system)
+		.sort(
+			(a, b) =>
+				new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+		);
+
+	// Exclude the current message to avoid duplication (using note ID for robustness)
+	if (currentNoteId !== null) {
+		nonSystemNotes = nonSystemNotes.filter((note) => note.id !== currentNoteId);
+	}
+
+	// Check if we have conversation history (excluding current message)
+	const hasHistory = nonSystemNotes.length > 0;
+
+	if (!hasHistory) {
+		return { conversationHistory: "", hasHistory: false };
+	}
+
+	let messagesToInclude = nonSystemNotes;
+	let omittedCount = 0;
+	let includesOmission = false;
+
+	// If we have more than maxMessages, keep first message + last (maxMessages-1) messages
+	if (nonSystemNotes.length > maxMessages && nonSystemNotes[0]) {
+		const firstMessage = nonSystemNotes[0];
+		const recentMessages = nonSystemNotes.slice(-(maxMessages - 1));
+		messagesToInclude = [firstMessage, ...recentMessages];
+		omittedCount = nonSystemNotes.length - maxMessages;
+		includesOmission = true;
+	}
+
+	// Format messages with timestamps and roles
+	const formattedMessages = messagesToInclude.map((note) => {
+		const role = note.author.username === botUsername ? "Assistant" : "User";
+		const timestamp = new Date(note.created_at).toLocaleString("en-US", {
+			month: "short",
+			day: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+		const author = role === "User" ? note.author.name : "Bot";
+
+		return `[${timestamp}] ${author}: ${note.body}`;
+	});
+
+	// Build the conversation history with omission indicator placed separately
+	let conversationHistory: string;
+	if (includesOmission && formattedMessages.length > 1) {
+		// First message
+		const firstMsg = formattedMessages[0];
+		// Omission indicator as a separate line
+		const omissionLine = `[... ${omittedCount} message${omittedCount > 1 ? "s" : ""} omitted ...]`;
+		// Remaining messages
+		const remainingMsgs = formattedMessages.slice(1).join("\n\n");
+
+		conversationHistory = `${firstMsg}\n\n${omissionLine}\n\n${remainingMsgs}`;
+	} else {
+		conversationHistory = formattedMessages.join("\n\n");
+	}
+
+	return { conversationHistory, hasHistory };
+}
+
+export {
+	buildConversationHistory,
+	createClient,
+	createReviewSession,
+	promptAndWaitForResponse,
+	server,
+};

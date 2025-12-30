@@ -2,7 +2,11 @@ import { gitlabClient } from "../../index.ts";
 import type { Todo } from "../gitlab/gitlab-models.ts";
 import { cloneToTemp } from "../utils/git.ts";
 import logger from "../utils/logger.ts";
-import { createClient, promptAndWaitForResponse } from "./opencode-helper.ts";
+import {
+	buildConversationHistory,
+	createClient,
+	promptAndWaitForResponse,
+} from "./opencode-helper.ts";
 
 /**
  * Write tests for a merge request by creating an OpenCode session
@@ -44,7 +48,7 @@ export async function testMergeRequest(item: Todo): Promise<string> {
 	}
 
 	// Reply to acknowledge we're working on it
-	await gitlabClient.replyToDiscussion(
+	const initialNote = await gitlabClient.replyToDiscussion(
 		item.project.id,
 		item.target.iid,
 		initialDiscussion.id,
@@ -52,6 +56,7 @@ export async function testMergeRequest(item: Todo): Promise<string> {
 			body: "Meow 🐈, I'll write tests for this project and push them...",
 		},
 	);
+	const initialNoteId = initialNote.id;
 
 	// Get the project details and clone the merge request branch
 	const projectDetails = await gitlabClient.getProject(item.project.id);
@@ -61,7 +66,7 @@ export async function testMergeRequest(item: Todo): Promise<string> {
 	);
 
 	// Clone the merge request branch
-	const cloneResult = cloneToTemp(
+	const cloneResult = await cloneToTemp(
 		projectDetails.http_url_to_repo,
 		item.target.source_branch,
 	);
@@ -70,8 +75,20 @@ export async function testMergeRequest(item: Todo): Promise<string> {
 		// Create OpenCode client with the cloned repository
 		const { client: opencodeClient } = await createClient(cloneResult.path);
 
+		// Extract the note ID from the target URL (format: ...#note_123)
+		const noteIdMatch = item.target_url.match(/#note_(\d+)$/);
+		const currentNoteId = noteIdMatch ? Number(noteIdMatch[1]) : null;
+
+		// Build conversation history from the discussion notes
+		const botUsername = (await gitlabClient.getCurrentUser()).username;
+		const { conversationHistory, hasHistory } = buildConversationHistory(
+			initialDiscussion,
+			botUsername,
+			currentNoteId, // Exclude current message to avoid duplication
+		);
+
 		// Build the prompt with the user's request and context about the MR
-		const prompt = `@test-writer
+		let prompt = `@test-writer
 
 The user requested tests to be written via this message in a GitLab merge request discussion:
 
@@ -80,7 +97,19 @@ The user requested tests to be written via this message in a GitLab merge reques
 Context:
 - Merge request: "${item.target.title}"
 - Source branch: ${item.target.source_branch}
-- Target branch: ${item.target.target_branch || "unknown"}
+- Target branch: ${item.target.target_branch || "unknown"}`;
+
+		// Add conversation history if this is not the first response
+		if (hasHistory) {
+			prompt += `
+
+Previous conversation in this discussion:
+${conversationHistory}
+
+`;
+		}
+
+		prompt += `
 
 You have access to the repository code on the source branch. Your task:
 
@@ -103,6 +132,13 @@ IMPORTANT:
 - If you cannot get tests to pass after trying, STOP and clearly state this in your response
 - Do NOT tell the user what you're doing step-by-step, just provide a final summary
 
+IMPORTANT - FORMATTING YOUR FINAL RESPONSE:
+Your final response will be posted directly to a GitLab comment and must be formatted as plain markdown WITHOUT code fences.
+- Do NOT wrap your response in triple backticks (\`\`\`markdown)
+- Do NOT add "markdown" language tags
+- Just write plain markdown text that will render correctly in GitLab
+- Use markdown formatting (bold, lists, etc.) directly in your response
+
 Your final response should be a concise summary of:
 - What test files you created
 - What code/functionality is now covered by tests
@@ -114,7 +150,7 @@ Your final response should be a concise summary of:
 CRITICAL: If tests are still failing, your response MUST start with "⚠️ TESTS FAILED - NO CHANGES PUSHED" so the user knows immediately.`;
 
 		logger.debug(
-			{ request: item.body.substring(0, 100) },
+			{ request: item.body.substring(0, 100), prompt },
 			"Sending test writing request to OpenCode",
 		);
 
@@ -132,11 +168,11 @@ CRITICAL: If tests are still failing, your response MUST start with "⚠️ TEST
 		// AI handles git operations conditionally based on test results
 		// No need to push here - AI will push only if tests pass
 
-		// Reply to the discussion with the result
-		await gitlabClient.replyToDiscussion(
+		// Update the initial message with the result
+		await gitlabClient.updateMergeRequestNote(
 			item.project.id,
 			item.target.iid,
-			initialDiscussion.id,
+			initialNoteId,
 			{
 				body: `Test writing completed! 🐾\n\n${result}`,
 			},
@@ -144,7 +180,7 @@ CRITICAL: If tests are still failing, your response MUST start with "⚠️ TEST
 
 		logger.info(
 			{ mrIid: item.target.iid, discussionId: initialDiscussion.id },
-			"Posted test writing results to discussion",
+			"Updated message with test writing results",
 		);
 
 		return result;
@@ -175,7 +211,7 @@ CRITICAL: If tests are still failing, your response MUST start with "⚠️ TEST
 		try {
 			// Small delay to ensure all file handles are released
 			await new Promise((resolve) => setTimeout(resolve, 100));
-			cloneResult.cleanup();
+			await cloneResult.cleanup();
 		} catch (cleanupError) {
 			logger.warn(
 				{

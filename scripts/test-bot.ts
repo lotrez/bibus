@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { $ } from "bun";
 import {
 	createClient,
 	promptAndWaitForResponse,
@@ -30,12 +30,12 @@ const testModel =
 	"glm-4.7-free";
 
 if (!testToken || !testProject) {
-	console.error(
+	logger.error(
 		"Error: Please set GITLAB_TEST_TOKEN and GITLAB_TEST_PROJECT environment variables",
 	);
-	console.error("Example:");
-	console.error("  GITLAB_TEST_TOKEN=your_token");
-	console.error("  GITLAB_TEST_PROJECT=12345  (project ID)");
+	logger.error("Example:");
+	logger.error("  GITLAB_TEST_TOKEN=your_token");
+	logger.error("  GITLAB_TEST_PROJECT=12345  (project ID)");
 	process.exit(1);
 }
 
@@ -65,7 +65,7 @@ async function createTestMR() {
 
 		// Step 2: Clone the repository
 		logger.info("📦 Step 2: Cloning repository...");
-		const repo = cloneToTemp(project.http_url_to_repo);
+		const repo = await cloneToTemp(project.http_url_to_repo);
 		logger.info(`   ✓ Cloned to: ${repo.path}\n`);
 
 		try {
@@ -105,16 +105,10 @@ async function createTestMR() {
 			logger.info("🔄 Step 4: Fetching and checking out new branch...");
 
 			// Fetch the new branch from remote
-			execSync(`git fetch origin ${branchName}`, {
-				cwd: repo.path,
-				stdio: "inherit",
-			});
+			await $`git fetch origin ${branchName}`.cwd(repo.path);
 
 			// Checkout the branch
-			execSync(`git checkout ${branchName}`, {
-				cwd: repo.path,
-				stdio: "inherit",
-			});
+			await $`git checkout ${branchName}`.cwd(repo.path);
 
 			const currentBranch = getCurrentBranch(repo.path);
 			logger.info(`   ✓ Current branch: ${currentBranch}\n`);
@@ -140,14 +134,14 @@ async function createTestMR() {
 			logger.info("💾 Step 6: Committing and pushing all changes...");
 
 			// Get list of changed files using git status
-			const changedFilesOutput = execSync("git status --porcelain", {
-				cwd: repo.path,
-				encoding: "utf-8",
-			});
+			const changedFilesResult = await $`git status --porcelain`
+				.cwd(repo.path)
+				.quiet();
+			const changedFilesOutput = changedFilesResult.text();
 
 			const changedFiles = changedFilesOutput
 				.split("\n")
-				.filter((line) => line.trim());
+				.filter((line: string) => line.trim());
 
 			if (changedFiles.length === 0) {
 				logger.info("   ⚠️  No files were changed by OpenCode\n");
@@ -160,27 +154,17 @@ async function createTestMR() {
 
 				// Stage all changes
 				logger.info("   📝 Staging all changes...");
-				execSync("git add -A", {
-					cwd: repo.path,
-					stdio: "inherit",
-				});
+				await $`git add -A`.cwd(repo.path);
 
 				// Commit changes
 				logger.info("   📝 Committing changes...");
-				execSync(
-					'git commit -m "chore: add test changes with intentional bugs"',
-					{
-						cwd: repo.path,
-						stdio: "inherit",
-					},
+				await $`git commit -m ${`Test changes by bot at ${new Date().toISOString()}`}`.cwd(
+					repo.path,
 				);
 
 				// Push to remote
 				logger.info("   📝 Pushing to remote...");
-				execSync(`git push origin ${branchName}`, {
-					cwd: repo.path,
-					stdio: "inherit",
-				});
+				await $`git push origin ${branchName}`.cwd(repo.path);
 
 				logger.info(`   ✓ All changes committed and pushed\n`);
 			}
@@ -251,12 +235,12 @@ async function createTestMR() {
 		} finally {
 			// Cleanup
 			logger.info("🧹 Cleaning up...");
-			repo.cleanup();
+			await repo.cleanup();
 			logger.info("   ✓ Cleaned up temporary files\n");
 		}
 	} catch (error) {
-		console.error("\n❌ Test failed:");
-		console.error(error instanceof Error ? error.message : String(error));
+		logger.error("\n❌ Test failed:");
+		logger.error(error instanceof Error ? error.message : String(error));
 		process.exit(1);
 	}
 }
