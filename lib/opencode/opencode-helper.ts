@@ -4,6 +4,7 @@ import {
 	type OpencodeClient,
 } from "@opencode-ai/sdk/v2";
 import * as path from "node:path";
+import type { Discussion } from "../gitlab/gitlab-models.ts";
 import type { ReviewCommentParams } from "../gitlab/mcp.model.ts";
 import {
 	opencodeModel,
@@ -372,4 +373,35 @@ async function createReviewSession(
 	};
 }
 
-export { createClient, createReviewSession, promptAndWaitForResponse, server };
+/**
+ * Build conversation history from discussion notes
+ * @param discussion - The discussion containing notes
+ * @param botUsername - The username of the bot
+ * @returns Object with conversation history string and whether it exists
+ */
+function buildConversationHistory(
+	discussion: Discussion,
+	botUsername: string,
+): { conversationHistory: string; hasHistory: boolean } {
+	const conversationHistory = discussion.notes
+		.filter((note) => !note.system) // Filter out system notes
+		.map((note) => {
+			const role = note.author.username === botUsername ? "assistant" : "user";
+			return `${role === "user" ? note.author.name : "Bot"}: ${note.body}`;
+		})
+		.join("\n\n");
+
+	// Check if this is not the first response (more than 1 non-system note)
+	const nonSystemNotes = discussion.notes.filter((note) => !note.system);
+	const hasHistory = nonSystemNotes.length > 1;
+
+	return { conversationHistory, hasHistory };
+}
+
+export {
+	buildConversationHistory,
+	createClient,
+	createReviewSession,
+	promptAndWaitForResponse,
+	server,
+};

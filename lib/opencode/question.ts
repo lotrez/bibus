@@ -2,7 +2,11 @@ import { gitlabClient } from "../../index.ts";
 import type { Todo } from "../gitlab/gitlab-models.ts";
 import { cloneToTemp } from "../utils/git.ts";
 import logger from "../utils/logger.ts";
-import { createClient, promptAndWaitForResponse } from "./opencode-helper.ts";
+import {
+	buildConversationHistory,
+	createClient,
+	promptAndWaitForResponse,
+} from "./opencode-helper.ts";
 
 /**
  * Answer a general question by creating an OpenCode session
@@ -71,17 +75,10 @@ export async function answerQuestion(item: Todo): Promise<string> {
 
 		// Build conversation history from the discussion notes
 		const botUsername = (await gitlabClient.getCurrentUser()).username;
-		const conversationHistory = initialDiscussion.notes
-			.filter((note) => !note.system) // Filter out system notes
-			.map((note) => {
-				const role = note.author.username === botUsername ? "assistant" : "user";
-				return `${role === "user" ? note.author.name : "Bot"}: ${note.body}`;
-			})
-			.join("\n\n");
-
-		// Check if this is not the first response (more than 1 non-system note)
-		const nonSystemNotes = initialDiscussion.notes.filter((note) => !note.system);
-		const hasConversationHistory = nonSystemNotes.length > 1;
+		const { conversationHistory, hasHistory } = buildConversationHistory(
+			initialDiscussion,
+			botUsername,
+		);
 
 		// Build the prompt with the user's question and context about the MR
 		let prompt = `@question-answerer
@@ -96,7 +93,7 @@ Context:
 - Target branch: ${item.target.target_branch || "unknown"}`;
 
 		// Add conversation history if this is not the first response
-		if (hasConversationHistory) {
+		if (hasHistory) {
 			prompt += `
 
 Previous conversation in this discussion:

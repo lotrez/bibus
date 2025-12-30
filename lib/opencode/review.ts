@@ -2,7 +2,11 @@ import { gitlabClient } from "../../index.ts";
 import type { Todo } from "../gitlab/gitlab-models.ts";
 import { cloneToTemp } from "../utils/git.ts";
 import logger from "../utils/logger.ts";
-import { createClient, createReviewSession } from "./opencode-helper.ts";
+import {
+	buildConversationHistory,
+	createClient,
+	createReviewSession,
+} from "./opencode-helper.ts";
 
 export async function reviewMergeRequest(item: Todo) {
 	logger.info(
@@ -60,13 +64,31 @@ export async function reviewMergeRequest(item: Todo) {
 			item.target.iid,
 		);
 
-		const prompt = `You are a code reviewer. The user requested a review via this message:
+		// Build conversation history from the discussion notes
+		const botUsername = (await gitlabClient.getCurrentUser()).username;
+		const { conversationHistory, hasHistory } = initialDiscussion
+			? buildConversationHistory(initialDiscussion, botUsername)
+			: { conversationHistory: "", hasHistory: false };
+
+		let prompt = `You are a code reviewer. The user requested a review via this message:
 
 "${item.body}"
 
 Review the merge request "${item.target.title}".
 
-The projectId is ${item.project.id} and the merge request IID is ${item.target.iid}.
+The projectId is ${item.project.id} and the merge request IID is ${item.target.iid}.`;
+
+		// Add conversation history if this is not the first response
+		if (hasHistory) {
+			prompt += `
+
+Previous conversation in this discussion:
+${conversationHistory}
+
+`;
+		}
+
+		prompt += `
 
 Do not tell the user what you are doing, he does not need to know. Just focus on reviewing the code changes.
 
