@@ -54,7 +54,7 @@ export async function reviewMergeRequest(item: Todo) {
 	);
 
 	// clone the merge request
-	const cloneResult = cloneToTemp(
+	const cloneResult = await cloneToTemp(
 		projectDetails.http_url_to_repo,
 		item.target.source_branch,
 	);
@@ -224,7 +224,7 @@ Your final response must be a brief summary of the review actions you took. Do N
 		try {
 			// Small delay to ensure all file handles are released
 			await new Promise((resolve) => setTimeout(resolve, 100));
-			cloneResult.cleanup();
+			await cloneResult.cleanup();
 		} catch (cleanupError) {
 			logger.warn(
 				{

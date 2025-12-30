@@ -1,9 +1,9 @@
-import * as path from "node:path";
 import {
 	createOpencodeClient,
 	createOpencodeServer,
 	type OpencodeClient,
 } from "@opencode-ai/sdk/v2";
+import path from "node:path";
 import type { Discussion } from "../gitlab/gitlab-models.ts";
 import type { ReviewCommentParams } from "../gitlab/mcp.model.ts";
 import {
@@ -56,7 +56,7 @@ const createClient = async (
 ) => {
 	logger.info(
 		{ url: server.url, mcpServer: mcpServerPath, projectId, mrIid },
-		"OpenCode server started with MCP review tool",
+		"Creating OpenCode client with MCP review tool",
 	);
 
 	const client = createOpencodeClient({

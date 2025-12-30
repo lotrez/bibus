@@ -66,7 +66,7 @@ export async function testMergeRequest(item: Todo): Promise<string> {
 	);
 
 	// Clone the merge request branch
-	const cloneResult = cloneToTemp(
+	const cloneResult = await cloneToTemp(
 		projectDetails.http_url_to_repo,
 		item.target.source_branch,
 	);
@@ -204,7 +204,7 @@ CRITICAL: If tests are still failing, your response MUST start with "⚠️ TEST
 		try {
 			// Small delay to ensure all file handles are released
 			await new Promise((resolve) => setTimeout(resolve, 100));
-			cloneResult.cleanup();
+			await cloneResult.cleanup();
 		} catch (cleanupError) {
 			logger.warn(
 				{

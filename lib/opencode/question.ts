@@ -65,7 +65,7 @@ export async function answerQuestion(item: Todo): Promise<string> {
 	);
 
 	// Clone the merge request branch
-	const cloneResult = cloneToTemp(
+	const cloneResult = await cloneToTemp(
 		projectDetails.http_url_to_repo,
 		item.target.source_branch,
 	);
@@ -177,7 +177,7 @@ Your answer will be posted directly in the merge request discussion. Do not talk
 		try {
 			// Small delay to ensure all file handles are released
 			await new Promise((resolve) => setTimeout(resolve, 100));
-			cloneResult.cleanup();
+			await cloneResult.cleanup();
 		} catch (cleanupError) {
 			logger.warn(
 				{

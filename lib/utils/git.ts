@@ -1,12 +1,11 @@
-import { execSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import path from "node:path";
+import { $ } from "bun";
 import { gitlabToken } from "./env-vars";
 import logger from "./logger";
 
 export interface CloneResult {
 	path: string;
-	cleanup: () => void;
+	cleanup: () => Promise<void>;
 }
 
 /**
@@ -15,7 +14,10 @@ export interface CloneResult {
  * @param branch - Optional branch name to clone (defaults to the default branch)
  * @returns Object with the cloned directory path and cleanup function
  */
-export function cloneToTemp(projectUrl: string, branch?: string): CloneResult {
+export async function cloneToTemp(
+	projectUrl: string,
+	branch?: string,
+): Promise<CloneResult> {
 	// Normalize the URL
 	let normalizedUrl = projectUrl;
 	if (
@@ -37,47 +39,112 @@ export function cloneToTemp(projectUrl: string, branch?: string): CloneResult {
 	// Create a temporary directory in the current project
 	const projectRoot = process.cwd();
 	const tempBaseDir = path.join(projectRoot, ".temp");
+	logger.debug({ projectRoot, tempBaseDir }, "Setting up temp directory");
 
 	// Ensure .temp directory exists
-	if (!fs.existsSync(tempBaseDir)) {
-		fs.mkdirSync(tempBaseDir, { recursive: true });
+	const tempBaseDirFile = Bun.file(tempBaseDir);
+	const dirExists = await tempBaseDirFile.exists();
+	logger.debug({ tempBaseDir, dirExists }, "Checking if temp base dir exists");
+
+	if (!dirExists) {
+		logger.debug({ tempBaseDir }, "Creating temp base directory");
+		await $`mkdir -p ${tempBaseDir}`.quiet();
+		logger.debug({ tempBaseDir }, "Temp base directory created");
 	}
 
-	const tempDir = fs.mkdtempSync(path.join(tempBaseDir, "gitlab-clone-"));
+	// Create temp directory (Bun doesn't have mkdtemp, so we'll use a timestamp-based name)
+	const tempDirName = `gitlab-clone-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+	const tempDir = path.join(tempBaseDir, tempDirName);
+	logger.debug({ tempDir, tempDirName }, "Creating unique temp directory");
+
+	await $`mkdir -p ${tempDir}`.quiet();
+	logger.debug({ tempDir }, "Temp directory created");
 
 	try {
-		// Build git clone command
-		const branchArg = branch ? `--branch ${branch}` : "";
-		const command = `git clone ${branchArg} "${urlWithToken}" "${tempDir}"`;
-
 		logger.debug({ url: projectUrl, branch, tempDir }, "Cloning repository...");
 
-		// Execute clone command and capture output
-		const output = execSync(command, {
-			encoding: "utf-8",
-			env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-		});
+		// Execute clone command using Bun's $
+		logger.debug(
+			{ branch, hasToken: !!gitlabToken },
+			"Preparing git clone command",
+		);
 
-		logger.debug({ output: output.trim() }, "Git clone output");
+		logger.info("Starting git clone...");
+		const result = branch
+			? await $`git clone --branch ${branch} ${urlWithToken} ${tempDir}`.env({
+					GIT_TERMINAL_PROMPT: "0",
+				})
+			: await $`git clone ${urlWithToken} ${tempDir}`.env({
+					GIT_TERMINAL_PROMPT: "0",
+				});
+		logger.info("Git clone completed");
+
+		const output = result.text();
+		const stderr = result.stderr ? new TextDecoder().decode(result.stderr) : "";
+		logger.debug(
+			{ output: output.trim(), stderr: stderr.trim() },
+			"Git clone output",
+		);
 		logger.info({ path: tempDir, branch }, "Repository cloned successfully");
 
 		return {
 			path: tempDir,
-			cleanup: () => {
-				if (fs.existsSync(tempDir)) {
-					fs.rmSync(tempDir, { recursive: true, force: true });
+			cleanup: async () => {
+				logger.debug({ path: tempDir }, "Starting cleanup...");
+				const dirFile = Bun.file(tempDir);
+				const exists = await dirFile.exists();
+				logger.debug(
+					{ path: tempDir, exists },
+					"Checking if temp dir exists for cleanup",
+				);
+
+				if (exists) {
+					logger.debug({ path: tempDir }, "Removing temp directory");
+					await $`rm -rf ${tempDir}`.quiet();
 					logger.debug({ path: tempDir }, "Cleaned up temporary directory");
+				} else {
+					logger.debug(
+						{ path: tempDir },
+						"Temp directory doesn't exist, skipping cleanup",
+					);
 				}
 			},
 		};
 	} catch (error) {
-		// Clean up on error
-		if (fs.existsSync(tempDir)) {
-			fs.rmSync(tempDir, { recursive: true, force: true });
+		// Try to extract stderr from the error
+		let errorDetails = error instanceof Error ? error.message : String(error);
+		let stderr = "";
+
+		// Bun's $ throws errors with stderr/stdout
+		if (error && typeof error === "object" && "stderr" in error) {
+			const stderrBuffer = (error as any).stderr;
+			if (stderrBuffer) {
+				stderr = new TextDecoder().decode(stderrBuffer);
+				errorDetails = stderr || errorDetails;
+			}
 		}
-		throw new Error(
-			`Failed to clone repository: ${error instanceof Error ? error.message : String(error)}`,
+
+		logger.error(
+			{
+				error: errorDetails,
+				stderr: stderr || undefined,
+				projectUrl,
+				branch,
+				tempDir,
+			},
+			"Failed to clone repository",
 		);
+
+		// Clean up on error
+		logger.debug({ tempDir }, "Cleaning up temp directory after error");
+		const dirFile = Bun.file(tempDir);
+		if (await dirFile.exists()) {
+			logger.debug({ tempDir }, "Removing temp directory after error");
+			await $`rm -rf ${tempDir}`.quiet();
+			logger.debug({ tempDir }, "Temp directory removed after error");
+		}
+
+		throw new Error(`Failed to clone repository: ${errorDetails}`);
 	}
 }
 
@@ -87,10 +154,10 @@ export function cloneToTemp(projectUrl: string, branch?: string): CloneResult {
  * @param branch - Optional branch name to clone (defaults to the default branch)
  * @returns Object with the cloned directory path and cleanup function
  */
-export function cloneToTempShallow(
+export async function cloneToTempShallow(
 	projectUrl: string,
 	branch?: string,
-): CloneResult {
+): Promise<CloneResult> {
 	// Normalize the URL
 	let normalizedUrl = projectUrl;
 	if (
@@ -114,29 +181,43 @@ export function cloneToTempShallow(
 	const tempBaseDir = path.join(projectRoot, ".temp");
 
 	// Ensure .temp directory exists
-	if (!fs.existsSync(tempBaseDir)) {
-		fs.mkdirSync(tempBaseDir, { recursive: true });
+	const tempBaseDirFile = Bun.file(tempBaseDir);
+	if (!(await tempBaseDirFile.exists())) {
+		await $`mkdir -p ${tempBaseDir}`.quiet();
 	}
 
-	const tempDir = fs.mkdtempSync(path.join(tempBaseDir, "gitlab-clone-"));
+	// Create temp directory
+	const tempDirName = `gitlab-clone-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+	const tempDir = path.join(tempBaseDir, tempDirName);
+	await $`mkdir -p ${tempDir}`.quiet();
 
 	try {
-		// Build git clone command with shallow clone
-		const branchArg = branch ? `--branch ${branch}` : "";
-		const command = `git clone --depth 1 ${branchArg} "${urlWithToken}" "${tempDir}"`;
-
 		logger.debug(
 			{ url: projectUrl, branch, tempDir, shallow: true },
 			"Shallow cloning repository...",
 		);
 
-		// Execute clone command and capture output
-		const output = execSync(command, {
-			encoding: "utf-8",
-			env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-		});
+		// Execute clone command using Bun's $
+		logger.debug({ branch }, "Preparing shallow git clone command");
 
-		logger.debug({ output: output.trim() }, "Git shallow clone output");
+		logger.info("Starting shallow git clone...");
+		const result = branch
+			? await $`git clone --depth 1 --branch ${branch} ${urlWithToken} ${tempDir}`.env(
+					{
+						GIT_TERMINAL_PROMPT: "0",
+					},
+				)
+			: await $`git clone --depth 1 ${urlWithToken} ${tempDir}`.env({
+					GIT_TERMINAL_PROMPT: "0",
+				});
+		logger.info("Shallow git clone completed");
+
+		const output = result.text();
+		const stderr = result.stderr ? new TextDecoder().decode(result.stderr) : "";
+		logger.debug(
+			{ output: output.trim(), stderr: stderr.trim() },
+			"Git shallow clone output",
+		);
 		logger.info(
 			{ path: tempDir, branch, shallow: true },
 			"Repository shallow cloned successfully",
@@ -144,21 +225,53 @@ export function cloneToTempShallow(
 
 		return {
 			path: tempDir,
-			cleanup: () => {
-				if (fs.existsSync(tempDir)) {
-					fs.rmSync(tempDir, { recursive: true, force: true });
+			cleanup: async () => {
+				logger.debug({ path: tempDir }, "Starting shallow clone cleanup...");
+				const dirFile = Bun.file(tempDir);
+				if (await dirFile.exists()) {
+					logger.debug(
+						{ path: tempDir },
+						"Removing shallow clone temp directory",
+					);
+					await $`rm -rf ${tempDir}`.quiet();
 					logger.debug({ path: tempDir }, "Cleaned up temporary directory");
 				}
 			},
 		};
 	} catch (error) {
-		// Clean up on error
-		if (fs.existsSync(tempDir)) {
-			fs.rmSync(tempDir, { recursive: true, force: true });
+		// Try to extract stderr from the error
+		let errorDetails = error instanceof Error ? error.message : String(error);
+		let stderr = "";
+
+		if (error && typeof error === "object" && "stderr" in error) {
+			const stderrBuffer = (error as any).stderr;
+			if (stderrBuffer) {
+				stderr = new TextDecoder().decode(stderrBuffer);
+				errorDetails = stderr || errorDetails;
+			}
 		}
-		throw new Error(
-			`Failed to shallow clone repository: ${error instanceof Error ? error.message : String(error)}`,
+
+		logger.error(
+			{
+				error: errorDetails,
+				stderr: stderr || undefined,
+				projectUrl,
+				branch,
+				tempDir,
+			},
+			"Failed to shallow clone repository",
 		);
+
+		// Clean up on error
+		const dirFile = Bun.file(tempDir);
+		if (await dirFile.exists()) {
+			logger.debug(
+				{ tempDir },
+				"Removing temp directory after shallow clone error",
+			);
+			await $`rm -rf ${tempDir}`.quiet();
+		}
+		throw new Error(`Failed to shallow clone repository: ${errorDetails}`);
 	}
 }
 
@@ -169,37 +282,69 @@ export function cloneToTempShallow(
  * @param createNew - If true, creates a new branch instead of checking out existing one
  * @throws Error if checkout fails
  */
-export function checkoutBranch(
+export async function checkoutBranch(
 	repoPath: string,
 	branch: string,
 	createNew = false,
-): void {
-	if (!fs.existsSync(repoPath)) {
+): Promise<void> {
+	logger.debug({ repoPath, branch, createNew }, "Starting checkoutBranch");
+
+	const repoFile = Bun.file(repoPath);
+	const repoExists = await repoFile.exists();
+	logger.debug({ repoPath, repoExists }, "Checking if repo path exists");
+
+	if (!repoExists) {
 		throw new Error(`Repository path does not exist: ${repoPath}`);
 	}
 
 	const gitDir = path.join(repoPath, ".git");
-	if (!fs.existsSync(gitDir)) {
+	const gitDirFile = Bun.file(gitDir);
+	const gitDirExists = await gitDirFile.exists();
+	logger.debug({ gitDir, gitDirExists }, "Checking if .git directory exists");
+
+	if (!gitDirExists) {
 		throw new Error(`Not a git repository: ${repoPath}`);
 	}
 
 	try {
-		const createFlag = createNew ? "-b" : "";
-		const command = `git checkout ${createFlag} ${branch}`;
-
 		logger.debug({ branch, createNew, repoPath }, "Checking out branch...");
 
-		const output = execSync(command, {
-			cwd: repoPath,
-			encoding: "utf-8",
-		});
+		logger.info({ branch, createNew }, "Running git checkout...");
+		const result = createNew
+			? await $`git checkout -b ${branch}`.cwd(repoPath)
+			: await $`git checkout ${branch}`.cwd(repoPath);
+		logger.info("Git checkout completed");
 
-		logger.debug({ output: output.trim() }, "Git checkout output");
+		const output = result.text();
+		const stderr = result.stderr ? new TextDecoder().decode(result.stderr) : "";
+		logger.debug(
+			{ output: output.trim(), stderr: stderr.trim() },
+			"Git checkout output",
+		);
 		logger.info({ branch, createNew }, "Branch checked out successfully");
 	} catch (error) {
-		throw new Error(
-			`Failed to checkout branch ${branch}: ${error instanceof Error ? error.message : String(error)}`,
+		let errorDetails = error instanceof Error ? error.message : String(error);
+		let stderr = "";
+
+		if (error && typeof error === "object" && "stderr" in error) {
+			const stderrBuffer = (error as any).stderr;
+			if (stderrBuffer) {
+				stderr = new TextDecoder().decode(stderrBuffer);
+				errorDetails = stderr || errorDetails;
+			}
+		}
+
+		logger.error(
+			{
+				error: errorDetails,
+				stderr: stderr || undefined,
+				branch,
+				repoPath,
+				createNew,
+			},
+			"Failed to checkout branch",
 		);
+		throw new Error(`Failed to checkout branch ${branch}: ${errorDetails}`);
 	}
 }
 
@@ -208,25 +353,37 @@ export function checkoutBranch(
  * @param repoPath - Path to the git repository
  * @returns The current branch name
  */
-export function getCurrentBranch(repoPath: string): string {
-	if (!fs.existsSync(repoPath)) {
+export async function getCurrentBranch(repoPath: string): Promise<string> {
+	logger.debug({ repoPath }, "Starting getCurrentBranch");
+
+	const repoFile = Bun.file(repoPath);
+	if (!(await repoFile.exists())) {
 		throw new Error(`Repository path does not exist: ${repoPath}`);
 	}
 
 	const gitDir = path.join(repoPath, ".git");
-	if (!fs.existsSync(gitDir)) {
+	const gitDirFile = Bun.file(gitDir);
+	if (!(await gitDirFile.exists())) {
 		throw new Error(`Not a git repository: ${repoPath}`);
 	}
 
 	try {
-		const branch = execSync("git rev-parse --abbrev-ref HEAD", {
-			cwd: repoPath,
-			encoding: "utf-8",
-		}).trim();
+		logger.info("Getting current branch...");
+		const result = await $`git rev-parse --abbrev-ref HEAD`
+			.cwd(repoPath)
+			.quiet();
+		const branch = result.text().trim();
 
 		logger.debug({ branch, repoPath }, "Got current branch");
 		return branch;
 	} catch (error) {
+		logger.error(
+			{
+				error: error instanceof Error ? error.message : String(error),
+				repoPath,
+			},
+			"Failed to get current branch",
+		);
 		throw new Error(
 			`Failed to get current branch: ${error instanceof Error ? error.message : String(error)}`,
 		);
@@ -238,30 +395,50 @@ export function getCurrentBranch(repoPath: string): string {
  * @param repoPath - Path to the git repository
  * @throws Error if fetch fails
  */
-export function fetchAll(repoPath: string): void {
-	if (!fs.existsSync(repoPath)) {
+export async function fetchAll(repoPath: string): Promise<void> {
+	logger.debug({ repoPath }, "Starting fetchAll");
+
+	const repoFile = Bun.file(repoPath);
+	if (!(await repoFile.exists())) {
 		throw new Error(`Repository path does not exist: ${repoPath}`);
 	}
 
 	const gitDir = path.join(repoPath, ".git");
-	if (!fs.existsSync(gitDir)) {
+	const gitDirFile = Bun.file(gitDir);
+	if (!(await gitDirFile.exists())) {
 		throw new Error(`Not a git repository: ${repoPath}`);
 	}
 
 	try {
-		logger.debug({ repoPath }, "Fetching all remote branches...");
+		logger.info("Getting current branch...");
+		const result = await $`git rev-parse --abbrev-ref HEAD`
+			.cwd(repoPath)
+			.quiet();
+		const branch = result.text().trim();
 
-		const output = execSync("git fetch --all", {
-			cwd: repoPath,
-			encoding: "utf-8",
-		});
-
-		logger.debug({ output: output.trim() }, "Git fetch output");
-		logger.info("Fetched all remote branches successfully");
+		logger.debug({ branch, repoPath }, "Got current branch");
+		return branch;
 	} catch (error) {
-		throw new Error(
-			`Failed to fetch branches: ${error instanceof Error ? error.message : String(error)}`,
+		let errorDetails = error instanceof Error ? error.message : String(error);
+		let stderr = "";
+
+		if (error && typeof error === "object" && "stderr" in error) {
+			const stderrBuffer = (error as any).stderr;
+			if (stderrBuffer) {
+				stderr = new TextDecoder().decode(stderrBuffer);
+				errorDetails = stderr || errorDetails;
+			}
+		}
+
+		logger.error(
+			{
+				error: errorDetails,
+				stderr: stderr || undefined,
+				repoPath,
+			},
+			"Failed to get current branch",
 		);
+		throw new Error(`Failed to get current branch: ${errorDetails}`);
 	}
 }
 
@@ -270,24 +447,24 @@ export function fetchAll(repoPath: string): void {
  * @param repoPath - Path to the git repository
  * @throws Error if git add fails
  */
-export function addAll(repoPath: string): void {
-	if (!fs.existsSync(repoPath)) {
+export async function addAll(repoPath: string): Promise<void> {
+	const repoFile = Bun.file(repoPath);
+	if (!(await repoFile.exists())) {
 		throw new Error(`Repository path does not exist: ${repoPath}`);
 	}
 
 	const gitDir = path.join(repoPath, ".git");
-	if (!fs.existsSync(gitDir)) {
+	const gitDirFile = Bun.file(gitDir);
+	if (!(await gitDirFile.exists())) {
 		throw new Error(`Not a git repository: ${repoPath}`);
 	}
 
 	try {
 		logger.debug({ repoPath }, "Adding all changes to staging area...");
 
-		const output = execSync("git add -A", {
-			cwd: repoPath,
-			encoding: "utf-8",
-		});
+		const result = await $`git add -A`.cwd(repoPath);
 
+		const output = result.text();
 		logger.debug({ output: output.trim() }, "Git add output");
 		logger.info("Added all changes to staging area");
 	} catch (error) {
@@ -304,31 +481,29 @@ export function addAll(repoPath: string): void {
  * @param allowEmpty - Allow empty commits
  * @throws Error if git commit fails
  */
-export function commit(
+export async function commit(
 	repoPath: string,
 	message: string,
 	allowEmpty = false,
-): void {
-	if (!fs.existsSync(repoPath)) {
+): Promise<void> {
+	const repoFile = Bun.file(repoPath);
+	if (!(await repoFile.exists())) {
 		throw new Error(`Repository path does not exist: ${repoPath}`);
 	}
 
 	const gitDir = path.join(repoPath, ".git");
-	if (!fs.existsSync(gitDir)) {
+	const gitDirFile = Bun.file(gitDir);
+	if (!(await gitDirFile.exists())) {
 		throw new Error(`Not a git repository: ${repoPath}`);
 	}
 
 	try {
-		const emptyFlag = allowEmpty ? "--allow-empty" : "";
-		const command = `git commit ${emptyFlag} -m "${message.replace(/"/g, '\\"')}"`;
-
 		logger.debug({ repoPath, message, allowEmpty }, "Creating commit...");
 
-		const output = execSync(command, {
-			cwd: repoPath,
-			encoding: "utf-8",
-		});
+		const emptyFlag = allowEmpty ? "--allow-empty" : "";
+		const result = await $`git commit ${emptyFlag} -m ${message}`.cwd(repoPath);
 
+		const output = result.text();
 		logger.debug({ output: output.trim() }, "Git commit output");
 		logger.info({ message }, "Commit created successfully");
 	} catch (error) {
@@ -346,34 +521,33 @@ export function commit(
  * @param force - Force push
  * @throws Error if git push fails
  */
-export function push(
+export async function push(
 	repoPath: string,
 	remote = "origin",
 	branch?: string,
 	force = false,
-): void {
-	if (!fs.existsSync(repoPath)) {
+): Promise<void> {
+	const repoFile = Bun.file(repoPath);
+	if (!(await repoFile.exists())) {
 		throw new Error(`Repository path does not exist: ${repoPath}`);
 	}
 
 	const gitDir = path.join(repoPath, ".git");
-	if (!fs.existsSync(gitDir)) {
+	const gitDirFile = Bun.file(gitDir);
+	if (!(await gitDirFile.exists())) {
 		throw new Error(`Not a git repository: ${repoPath}`);
 	}
 
 	try {
-		const forceFlag = force ? "--force" : "";
-		const branchArg = branch ? branch : "";
-		const command = `git push ${forceFlag} ${remote} ${branchArg}`.trim();
-
 		logger.debug({ repoPath, remote, branch, force }, "Pushing to remote...");
 
-		const output = execSync(command, {
-			cwd: repoPath,
-			encoding: "utf-8",
-			env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-		});
+		const forceFlag = force ? "--force" : "";
+		const branchArg = branch || "";
+		const result = await $`git push ${forceFlag} ${remote} ${branchArg}`
+			.cwd(repoPath)
+			.env({ GIT_TERMINAL_PROMPT: "0" });
 
+		const output = result.text();
 		logger.debug({ output: output.trim() }, "Git push output");
 		logger.info({ remote, branch }, "Pushed to remote successfully");
 	} catch (error) {
