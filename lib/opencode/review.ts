@@ -184,6 +184,14 @@ Example 4 - Delete multiple lines (lines 23-27, commenting on line 25):
 REMEMBER: To delete = use suggestedCode: "" (empty string). This is the correct way to tell GitLab to remove lines.
 
 Start now: run git diff, analyze the changes, then post_review_comment for each finding WITH suggestedCode fixes.
+
+IMPORTANT - FORMATTING YOUR FINAL RESPONSE:
+Your final response will be posted directly to a GitLab comment and must be formatted as plain markdown WITHOUT code fences.
+- Do NOT wrap your response in triple backticks (\`\`\`markdown)
+- Do NOT add "markdown" language tags
+- Just write plain markdown text that will render correctly in GitLab
+- Use markdown formatting (bold, lists, etc.) directly in your response
+
 Your final response must be a brief summary of the review actions you took. Do NOT include any review comments in the final response - those are already posted via the tool calls. Only summarize your actions.
 `;
 

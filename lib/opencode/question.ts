@@ -115,8 +115,16 @@ You have access to the repository code on the source branch. You can:
 2. Use git commands to see diffs or history
 3. Search through the codebase
 
+IMPORTANT - FORMATTING YOUR ANSWER:
+Your answer will be posted directly to a GitLab comment and must be formatted as plain markdown WITHOUT code fences.
+- Do NOT wrap your response in triple backticks (\`\`\`markdown)
+- Do NOT add "markdown" language tags
+- Just write plain markdown text that will render correctly in GitLab
+- Use markdown formatting (bold, lists, code blocks for code snippets, etc.) directly in your response
+- For code snippets, use single backticks or triple backticks with the language name (e.g., \`\`\`typescript)
+
 Please provide a clear, concise answer to their question. If the question is about code, make sure to examine the relevant files.
-Your answer will be posted directly in the merge request discussion. Do not talk about what you are doing, just provide the answer.`;
+Do not talk about what you are doing, just provide the answer.`;
 
 		logger.debug(
 			{ question: item.body, prompt },

@@ -132,6 +132,13 @@ IMPORTANT:
 - If you cannot get tests to pass after trying, STOP and clearly state this in your response
 - Do NOT tell the user what you're doing step-by-step, just provide a final summary
 
+IMPORTANT - FORMATTING YOUR FINAL RESPONSE:
+Your final response will be posted directly to a GitLab comment and must be formatted as plain markdown WITHOUT code fences.
+- Do NOT wrap your response in triple backticks (\`\`\`markdown)
+- Do NOT add "markdown" language tags
+- Just write plain markdown text that will render correctly in GitLab
+- Use markdown formatting (bold, lists, etc.) directly in your response
+
 Your final response should be a concise summary of:
 - What test files you created
 - What code/functionality is now covered by tests
