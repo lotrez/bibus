@@ -69,8 +69,22 @@ export async function answerQuestion(item: Todo): Promise<string> {
 		// Create OpenCode client with the cloned repository
 		const { client: opencodeClient } = await createClient(cloneResult.path);
 
-	// Build the prompt with the user's question and context about the MR
-	const prompt = `@question-answerer
+		// Build conversation history from the discussion notes
+		const botUsername = (await gitlabClient.getCurrentUser()).username;
+		const conversationHistory = initialDiscussion.notes
+			.filter((note) => !note.system) // Filter out system notes
+			.map((note) => {
+				const role = note.author.username === botUsername ? "assistant" : "user";
+				return `${role === "user" ? note.author.name : "Bot"}: ${note.body}`;
+			})
+			.join("\n\n");
+
+		// Check if this is not the first response (more than 1 non-system note)
+		const nonSystemNotes = initialDiscussion.notes.filter((note) => !note.system);
+		const hasConversationHistory = nonSystemNotes.length > 1;
+
+		// Build the prompt with the user's question and context about the MR
+		let prompt = `@question-answerer
 
 The user asked a question via this message in a GitLab merge request discussion:
 
@@ -79,7 +93,19 @@ The user asked a question via this message in a GitLab merge request discussion:
 Context:
 - Merge request: "${item.target.title}"
 - Source branch: ${item.target.source_branch}
-- Target branch: ${item.target.target_branch || "unknown"}
+- Target branch: ${item.target.target_branch || "unknown"}`;
+
+		// Add conversation history if this is not the first response
+		if (hasConversationHistory) {
+			prompt += `
+
+Previous conversation in this discussion:
+${conversationHistory}
+
+`;
+		}
+
+		prompt += `
 
 You have access to the repository code on the source branch. You can:
 1. Read files to understand the code
