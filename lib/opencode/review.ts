@@ -64,13 +64,17 @@ export async function reviewMergeRequest(item: Todo) {
 			item.target.iid,
 		);
 
+		// Extract the note ID from the target URL (format: ...#note_123)
+		const noteIdMatch = item.target_url.match(/#note_(\d+)$/);
+		const currentNoteId = noteIdMatch ? Number(noteIdMatch[1]) : null;
+
 		// Build conversation history from the discussion notes
 		const botUsername = (await gitlabClient.getCurrentUser()).username;
 		const { conversationHistory, hasHistory } = initialDiscussion
 			? buildConversationHistory(
 					initialDiscussion,
 					botUsername,
-					item.body, // Exclude current message to avoid duplication
+					currentNoteId, // Exclude current message to avoid duplication
 				)
 			: { conversationHistory: "", hasHistory: false };
 

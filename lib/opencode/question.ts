@@ -73,12 +73,16 @@ export async function answerQuestion(item: Todo): Promise<string> {
 		// Create OpenCode client with the cloned repository
 		const { client: opencodeClient } = await createClient(cloneResult.path);
 
+		// Extract the note ID from the target URL (format: ...#note_123)
+		const noteIdMatch = item.target_url.match(/#note_(\d+)$/);
+		const currentNoteId = noteIdMatch ? Number(noteIdMatch[1]) : null;
+
 		// Build conversation history from the discussion notes
 		const botUsername = (await gitlabClient.getCurrentUser()).username;
 		const { conversationHistory, hasHistory } = buildConversationHistory(
 			initialDiscussion,
 			botUsername,
-			item.body, // Exclude current message to avoid duplication
+			currentNoteId, // Exclude current message to avoid duplication
 		);
 
 		// Build the prompt with the user's question and context about the MR
