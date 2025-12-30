@@ -2,7 +2,11 @@ import { gitlabClient } from "../../index.ts";
 import type { Todo } from "../gitlab/gitlab-models.ts";
 import { cloneToTemp } from "../utils/git.ts";
 import logger from "../utils/logger.ts";
-import { createClient, promptAndWaitForResponse } from "./opencode-helper.ts";
+import {
+	buildConversationHistory,
+	createClient,
+	promptAndWaitForResponse,
+} from "./opencode-helper.ts";
 
 /**
  * Write tests for a merge request by creating an OpenCode session
@@ -70,8 +74,20 @@ export async function testMergeRequest(item: Todo): Promise<string> {
 		// Create OpenCode client with the cloned repository
 		const { client: opencodeClient } = await createClient(cloneResult.path);
 
+		// Extract the note ID from the target URL (format: ...#note_123)
+		const noteIdMatch = item.target_url.match(/#note_(\d+)$/);
+		const currentNoteId = noteIdMatch ? Number(noteIdMatch[1]) : null;
+
+		// Build conversation history from the discussion notes
+		const botUsername = (await gitlabClient.getCurrentUser()).username;
+		const { conversationHistory, hasHistory } = buildConversationHistory(
+			initialDiscussion,
+			botUsername,
+			currentNoteId, // Exclude current message to avoid duplication
+		);
+
 		// Build the prompt with the user's request and context about the MR
-		const prompt = `@test-writer
+		let prompt = `@test-writer
 
 The user requested tests to be written via this message in a GitLab merge request discussion:
 
@@ -80,7 +96,19 @@ The user requested tests to be written via this message in a GitLab merge reques
 Context:
 - Merge request: "${item.target.title}"
 - Source branch: ${item.target.source_branch}
-- Target branch: ${item.target.target_branch || "unknown"}
+- Target branch: ${item.target.target_branch || "unknown"}`;
+
+		// Add conversation history if this is not the first response
+		if (hasHistory) {
+			prompt += `
+
+Previous conversation in this discussion:
+${conversationHistory}
+
+`;
+		}
+
+		prompt += `
 
 You have access to the repository code on the source branch. Your task:
 
