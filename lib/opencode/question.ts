@@ -47,7 +47,7 @@ export async function answerQuestion(item: Todo): Promise<string> {
 	}
 
 	// Reply to acknowledge we're working on it
-	await gitlabClient.replyToDiscussion(
+	const initialNote = await gitlabClient.replyToDiscussion(
 		item.project.id,
 		item.target.iid,
 		initialDiscussion.id,
@@ -55,6 +55,7 @@ export async function answerQuestion(item: Todo): Promise<string> {
 			body: "Meow 🐈, let me think about that...",
 		},
 	);
+	const initialNoteId = initialNote.id;
 
 	// Get the project details and clone the merge request branch
 	const projectDetails = await gitlabClient.getProject(item.project.id);
@@ -118,7 +119,7 @@ Please provide a clear, concise answer to their question. If the question is abo
 Your answer will be posted directly in the merge request discussion. Do not talk about what you are doing, just provide the answer.`;
 
 		logger.debug(
-			{ question: item.body.substring(0, 100) },
+			{ question: item.body, prompt },
 			"Sending question to OpenCode",
 		);
 
@@ -133,11 +134,11 @@ Your answer will be posted directly in the merge request discussion. Do not talk
 			"Question answered by AI",
 		);
 
-		// Reply to the discussion with the answer
-		await gitlabClient.replyToDiscussion(
+		// Update the initial message with the answer
+		await gitlabClient.updateMergeRequestNote(
 			item.project.id,
 			item.target.iid,
-			initialDiscussion.id,
+			initialNoteId,
 			{
 				body: `${answer}`,
 			},
@@ -145,7 +146,7 @@ Your answer will be posted directly in the merge request discussion. Do not talk
 
 		logger.info(
 			{ mrIid: item.target.iid, discussionId: initialDiscussion.id },
-			"Posted answer to discussion",
+			"Updated message with answer",
 		);
 
 		return answer;

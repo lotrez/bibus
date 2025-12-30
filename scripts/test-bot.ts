@@ -30,12 +30,12 @@ const testModel =
 	"glm-4.7-free";
 
 if (!testToken || !testProject) {
-	console.error(
+	logger.error(
 		"Error: Please set GITLAB_TEST_TOKEN and GITLAB_TEST_PROJECT environment variables",
 	);
-	console.error("Example:");
-	console.error("  GITLAB_TEST_TOKEN=your_token");
-	console.error("  GITLAB_TEST_PROJECT=12345  (project ID)");
+	logger.error("Example:");
+	logger.error("  GITLAB_TEST_TOKEN=your_token");
+	logger.error("  GITLAB_TEST_PROJECT=12345  (project ID)");
 	process.exit(1);
 }
 
@@ -255,8 +255,8 @@ async function createTestMR() {
 			logger.info("   ✓ Cleaned up temporary files\n");
 		}
 	} catch (error) {
-		console.error("\n❌ Test failed:");
-		console.error(error instanceof Error ? error.message : String(error));
+		logger.error("\n❌ Test failed:");
+		logger.error(error instanceof Error ? error.message : String(error));
 		process.exit(1);
 	}
 }

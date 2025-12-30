@@ -48,7 +48,7 @@ export async function testMergeRequest(item: Todo): Promise<string> {
 	}
 
 	// Reply to acknowledge we're working on it
-	await gitlabClient.replyToDiscussion(
+	const initialNote = await gitlabClient.replyToDiscussion(
 		item.project.id,
 		item.target.iid,
 		initialDiscussion.id,
@@ -56,6 +56,7 @@ export async function testMergeRequest(item: Todo): Promise<string> {
 			body: "Meow 🐈, I'll write tests for this project and push them...",
 		},
 	);
+	const initialNoteId = initialNote.id;
 
 	// Get the project details and clone the merge request branch
 	const projectDetails = await gitlabClient.getProject(item.project.id);
@@ -142,7 +143,7 @@ Your final response should be a concise summary of:
 CRITICAL: If tests are still failing, your response MUST start with "⚠️ TESTS FAILED - NO CHANGES PUSHED" so the user knows immediately.`;
 
 		logger.debug(
-			{ request: item.body.substring(0, 100) },
+			{ request: item.body.substring(0, 100), prompt },
 			"Sending test writing request to OpenCode",
 		);
 
@@ -160,11 +161,11 @@ CRITICAL: If tests are still failing, your response MUST start with "⚠️ TEST
 		// AI handles git operations conditionally based on test results
 		// No need to push here - AI will push only if tests pass
 
-		// Reply to the discussion with the result
-		await gitlabClient.replyToDiscussion(
+		// Update the initial message with the result
+		await gitlabClient.updateMergeRequestNote(
 			item.project.id,
 			item.target.iid,
-			initialDiscussion.id,
+			initialNoteId,
 			{
 				body: `Test writing completed! 🐾\n\n${result}`,
 			},
@@ -172,7 +173,7 @@ CRITICAL: If tests are still failing, your response MUST start with "⚠️ TEST
 
 		logger.info(
 			{ mrIid: item.target.iid, discussionId: initialDiscussion.id },
-			"Posted test writing results to discussion",
+			"Updated message with test writing results",
 		);
 
 		return result;

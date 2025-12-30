@@ -1,9 +1,9 @@
+import * as path from "node:path";
 import {
 	createOpencodeClient,
 	createOpencodeServer,
 	type OpencodeClient,
 } from "@opencode-ai/sdk/v2";
-import * as path from "node:path";
 import type { Discussion } from "../gitlab/gitlab-models.ts";
 import type { ReviewCommentParams } from "../gitlab/mcp.model.ts";
 import {
@@ -88,10 +88,7 @@ async function promptAndWaitForResponse(
 		modelID: opencodeModel,
 	};
 
-	logger.debug(
-		{ prompt: prompt.substring(0, 100), model: modelConfig },
-		"Sending prompt to OpenCode",
-	);
+	logger.debug({ prompt, model: modelConfig }, "Sending prompt to OpenCode");
 
 	// Create session
 	const session = await client.session.create();
@@ -137,10 +134,7 @@ async function promptAndWaitForResponse(
 						{
 							tool: part.tool,
 							input: part.state.input,
-							output:
-								typeof part.state.output === "string"
-									? part.state.output.substring(0, 200)
-									: part.state.output,
+							output: part.state.output,
 						},
 						"Tool executed",
 					);
@@ -222,10 +216,7 @@ async function createReviewSession(
 		modelID: opencodeModel,
 	};
 
-	logger.debug(
-		{ prompt: prompt.substring(0, 100), model: modelConfig },
-		"Creating review session",
-	);
+	logger.debug({ prompt, model: modelConfig }, "Creating review session");
 
 	// Create session
 	const session = await client.session.create();
@@ -305,10 +296,7 @@ async function createReviewSession(
 						logger.debug(
 							{
 								tool: part.tool,
-								output:
-									typeof part.state.output === "string"
-										? part.state.output.substring(0, 200)
-										: part.state.output,
+								output: part.state.output,
 							},
 							"Tool completed",
 						);
@@ -397,9 +385,7 @@ function buildConversationHistory(
 
 	// Exclude the current message to avoid duplication (using note ID for robustness)
 	if (currentNoteId !== null) {
-		nonSystemNotes = nonSystemNotes.filter(
-			(note) => note.id !== currentNoteId,
-		);
+		nonSystemNotes = nonSystemNotes.filter((note) => note.id !== currentNoteId);
 	}
 
 	// Check if we have conversation history (excluding current message)

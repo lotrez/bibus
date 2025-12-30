@@ -33,8 +33,9 @@ export async function reviewMergeRequest(item: Todo) {
 		mrDiscussions,
 	);
 	// reenable when finished dev, do not post yet to not disable the todo
-	if (initialDiscussion)
-		await gitlabClient.replyToDiscussion(
+	let initialNoteId: number | null = null;
+	if (initialDiscussion) {
+		const initialNote = await gitlabClient.replyToDiscussion(
 			item.project.id,
 			item.target.iid,
 			initialDiscussion.id,
@@ -42,6 +43,8 @@ export async function reviewMergeRequest(item: Todo) {
 				body: "Meow 🐈, I'll start reviewing this merge request...",
 			},
 		);
+		initialNoteId = initialNote.id;
+	}
 
 	// get the project, use the url to clone it
 	const projectDetails = await gitlabClient.getProject(item.project.id);
@@ -184,6 +187,8 @@ Start now: run git diff, analyze the changes, then post_review_comment for each 
 Your final response must be a brief summary of the review actions you took. Do NOT include any review comments in the final response - those are already posted via the tool calls. Only summarize your actions.
 `;
 
+		logger.debug({ prompt }, "Sending review request to OpenCode");
+
 		const { responseText, commentCount } = await createReviewSession(
 			opencodeClient,
 			prompt,
@@ -202,15 +207,16 @@ Your final response must be a brief summary of the review actions you took. Do N
 			"Posted review comments to merge request",
 		);
 
-		if (initialDiscussion)
-			await gitlabClient.replyToDiscussion(
+		if (initialDiscussion && initialNoteId) {
+			await gitlabClient.updateMergeRequestNote(
 				item.project.id,
 				item.target.iid,
-				initialDiscussion.id,
+				initialNoteId,
 				{
 					body: `Review completed! 🐾 ${responseText}`,
 				},
 			);
+		}
 
 		return { summary: responseText, commentCount };
 	} finally {

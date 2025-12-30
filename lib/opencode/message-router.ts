@@ -38,10 +38,7 @@ Analyze this message and respond with ONLY the category name (review, test, or g
 
 Message: "${message}"`,
 	);
-	logger.debug(
-		{ response: response.substring(0, 100) },
-		"Message type determination response",
-	);
+	logger.debug({ response }, "Message type determination response");
 	const lowerResponse = response.toLowerCase();
 	for (const command of AVAILABLE_COMMANDS) {
 		if (lowerResponse.includes(command)) {
