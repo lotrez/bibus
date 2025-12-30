@@ -377,23 +377,68 @@ async function createReviewSession(
  * Build conversation history from discussion notes
  * @param discussion - The discussion containing notes
  * @param botUsername - The username of the bot
+ * @param currentMessageBody - The current message body to exclude from history (to avoid duplication)
+ * @param maxMessages - Maximum number of messages to include in history (default: 10)
  * @returns Object with conversation history string and whether it exists
  */
 function buildConversationHistory(
 	discussion: Discussion,
 	botUsername: string,
+	currentMessageBody: string,
+	maxMessages = 10,
 ): { conversationHistory: string; hasHistory: boolean } {
-	const conversationHistory = discussion.notes
-		.filter((note) => !note.system) // Filter out system notes
-		.map((note) => {
-			const role = note.author.username === botUsername ? "assistant" : "user";
-			return `${role === "user" ? note.author.name : "Bot"}: ${note.body}`;
-		})
-		.join("\n\n");
+	// Filter out system notes and sort by creation time (chronological order)
+	let nonSystemNotes = discussion.notes
+		.filter((note) => !note.system)
+		.sort(
+			(a, b) =>
+				new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+		);
 
-	// Check if this is not the first response (more than 1 non-system note)
-	const nonSystemNotes = discussion.notes.filter((note) => !note.system);
-	const hasHistory = nonSystemNotes.length > 1;
+	// Exclude the current message to avoid duplication
+	nonSystemNotes = nonSystemNotes.filter(
+		(note) => note.body.trim() !== currentMessageBody.trim(),
+	);
+
+	// Check if we have conversation history (excluding current message)
+	const hasHistory = nonSystemNotes.length > 0;
+
+	if (!hasHistory) {
+		return { conversationHistory: "", hasHistory: false };
+	}
+
+	let messagesToInclude = nonSystemNotes;
+	let omittedCount = 0;
+
+	// If we have more than maxMessages, keep first message + last (maxMessages-1) messages
+	if (nonSystemNotes.length > maxMessages && nonSystemNotes[0]) {
+		const firstMessage = nonSystemNotes[0];
+		const recentMessages = nonSystemNotes.slice(-(maxMessages - 1));
+		messagesToInclude = [firstMessage, ...recentMessages];
+		omittedCount = nonSystemNotes.length - maxMessages;
+	}
+
+	// Format messages with timestamps and roles
+	const formattedMessages = messagesToInclude.map((note, index) => {
+		const role = note.author.username === botUsername ? "Assistant" : "User";
+		const timestamp = new Date(note.created_at).toLocaleString("en-US", {
+			month: "short",
+			day: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+		const author = role === "User" ? note.author.name : "Bot";
+
+		// Add omission indicator after first message if needed
+		const omissionIndicator =
+			index === 0 && omittedCount > 0
+				? `\n\n[... ${omittedCount} message${omittedCount > 1 ? "s" : ""} omitted ...]`
+				: "";
+
+		return `[${timestamp}] ${author}: ${note.body}${omissionIndicator}`;
+	});
+
+	const conversationHistory = formattedMessages.join("\n\n");
 
 	return { conversationHistory, hasHistory };
 }

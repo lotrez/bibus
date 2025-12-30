@@ -67,7 +67,11 @@ export async function reviewMergeRequest(item: Todo) {
 		// Build conversation history from the discussion notes
 		const botUsername = (await gitlabClient.getCurrentUser()).username;
 		const { conversationHistory, hasHistory } = initialDiscussion
-			? buildConversationHistory(initialDiscussion, botUsername)
+			? buildConversationHistory(
+					initialDiscussion,
+					botUsername,
+					item.body, // Exclude current message to avoid duplication
+				)
 			: { conversationHistory: "", hasHistory: false };
 
 		let prompt = `You are a code reviewer. The user requested a review via this message:

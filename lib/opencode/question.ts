@@ -78,6 +78,7 @@ export async function answerQuestion(item: Todo): Promise<string> {
 		const { conversationHistory, hasHistory } = buildConversationHistory(
 			initialDiscussion,
 			botUsername,
+			item.body, // Exclude current message to avoid duplication
 		);
 
 		// Build the prompt with the user's question and context about the MR
