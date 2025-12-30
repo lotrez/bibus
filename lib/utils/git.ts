@@ -264,3 +264,121 @@ export function fetchAll(repoPath: string): void {
 		);
 	}
 }
+
+/**
+ * Add all changes to the staging area
+ * @param repoPath - Path to the git repository
+ * @throws Error if git add fails
+ */
+export function addAll(repoPath: string): void {
+	if (!fs.existsSync(repoPath)) {
+		throw new Error(`Repository path does not exist: ${repoPath}`);
+	}
+
+	const gitDir = path.join(repoPath, ".git");
+	if (!fs.existsSync(gitDir)) {
+		throw new Error(`Not a git repository: ${repoPath}`);
+	}
+
+	try {
+		logger.debug({ repoPath }, "Adding all changes to staging area...");
+
+		const output = execSync("git add -A", {
+			cwd: repoPath,
+			encoding: "utf-8",
+		});
+
+		logger.debug({ output: output.trim() }, "Git add output");
+		logger.info("Added all changes to staging area");
+	} catch (error) {
+		throw new Error(
+			`Failed to add changes: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+}
+
+/**
+ * Commit staged changes
+ * @param repoPath - Path to the git repository
+ * @param message - Commit message
+ * @param allowEmpty - Allow empty commits
+ * @throws Error if git commit fails
+ */
+export function commit(
+	repoPath: string,
+	message: string,
+	allowEmpty = false,
+): void {
+	if (!fs.existsSync(repoPath)) {
+		throw new Error(`Repository path does not exist: ${repoPath}`);
+	}
+
+	const gitDir = path.join(repoPath, ".git");
+	if (!fs.existsSync(gitDir)) {
+		throw new Error(`Not a git repository: ${repoPath}`);
+	}
+
+	try {
+		const emptyFlag = allowEmpty ? "--allow-empty" : "";
+		const command = `git commit ${emptyFlag} -m "${message.replace(/"/g, '\\"')}"`;
+
+		logger.debug({ repoPath, message, allowEmpty }, "Creating commit...");
+
+		const output = execSync(command, {
+			cwd: repoPath,
+			encoding: "utf-8",
+		});
+
+		logger.debug({ output: output.trim() }, "Git commit output");
+		logger.info({ message }, "Commit created successfully");
+	} catch (error) {
+		throw new Error(
+			`Failed to commit changes: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+}
+
+/**
+ * Push commits to remote repository
+ * @param repoPath - Path to the git repository
+ * @param remote - Remote name (default: "origin")
+ * @param branch - Branch name to push (if not specified, pushes current branch)
+ * @param force - Force push
+ * @throws Error if git push fails
+ */
+export function push(
+	repoPath: string,
+	remote = "origin",
+	branch?: string,
+	force = false,
+): void {
+	if (!fs.existsSync(repoPath)) {
+		throw new Error(`Repository path does not exist: ${repoPath}`);
+	}
+
+	const gitDir = path.join(repoPath, ".git");
+	if (!fs.existsSync(gitDir)) {
+		throw new Error(`Not a git repository: ${repoPath}`);
+	}
+
+	try {
+		const forceFlag = force ? "--force" : "";
+		const branchArg = branch ? branch : "";
+		const command = `git push ${forceFlag} ${remote} ${branchArg}`.trim();
+
+		logger.debug({ repoPath, remote, branch, force }, "Pushing to remote...");
+
+		const output = execSync(command, {
+			cwd: repoPath,
+			encoding: "utf-8",
+			env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+		});
+
+		logger.debug({ output: output.trim() }, "Git push output");
+		logger.info({ remote, branch }, "Pushed to remote successfully");
+	} catch (error) {
+		throw new Error(
+			`Failed to push to remote: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+}

@@ -2,11 +2,16 @@ import { currentUser, gitlabClient } from "..";
 import { determineMessageType } from "./opencode/message-router";
 import { answerQuestion } from "./opencode/question.ts";
 import { reviewMergeRequest } from "./opencode/review";
-import logger from "./utils/logger";
+import { testMergeRequest } from "./opencode/test.ts";
 import { pollingIntervalMs } from "./utils/env-vars.ts";
+import logger from "./utils/logger";
 
 const POLLING_INTERVAL_MS = pollingIntervalMs;
-export const AVAILABLE_COMMANDS = ["review", "general_question"] as const;
+export const AVAILABLE_COMMANDS = [
+	"review",
+	"general_question",
+	"test",
+] as const;
 
 // Keep track of MRs currently being processed to avoid duplicate work
 const MRS_IN_PROGRESS = new Set<number>();
@@ -52,6 +57,9 @@ async function detectCommands() {
 					break;
 				case "general_question":
 					await answerQuestion(item);
+					break;
+				case "test":
+					await testMergeRequest(item);
 					break;
 				default:
 					logger.warn(
