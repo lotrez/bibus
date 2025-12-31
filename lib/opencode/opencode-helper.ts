@@ -1,4 +1,3 @@
-import path from "node:path";
 import {
 	createOpencodeClient,
 	createOpencodeServer,
@@ -13,36 +12,29 @@ import {
 } from "../utils/env-vars.ts";
 import logger from "../utils/logger.ts";
 
-// Get the path to the MCP server script
-const mcpServerPath = path.join(
-	import.meta.dirname,
-	"../gitlab/mcp-review-server.ts",
-);
-const mcpExists = await Bun.file(mcpServerPath).exists();
-if (!mcpExists) {
-	throw new Error(`MCP server script not found at path: ${mcpServerPath}`);
+const agentConfig = await Bun.file("./config/agents.json");
+if (!(await agentConfig.exists())) {
+	throw new Error(`OpenCode agent config not found`);
 }
 
-const agentConfigPath = path.join(
-	import.meta.dirname,
-	"../../config/agents.json",
-);
-const agentConfigExists = await Bun.file(agentConfigPath).exists();
-if (!agentConfigExists) {
-	throw new Error(
-		`OpenCode agent config not found at path: ${agentConfigPath}`,
-	);
-}
+// When this CLI is compiled we want to invoke the same current command
+// otherwise ["bun", "run", "index.ts", "mcp"]
+const isRunningWithBun = (process.argv[0] ?? "").includes("bun");
+const mcpCommand: string[] = isRunningWithBun
+	? [process.argv[0] as string, "run", "index.ts", "mcp"]
+	: [process.argv[0] as string, "mcp"];
+
+logger.debug({ mcpCommand }, "MCP command configured");
 
 // Create server with MCP config
 const server = await createOpencodeServer({
 	port: opencodePort,
 	config: {
-		agent: await Bun.file(agentConfigPath).json(),
+		agent: await agentConfig.json(),
 		mcp: {
 			"bibus-review": {
 				type: "local",
-				command: ["bun", "run", mcpServerPath],
+				command: mcpCommand,
 				enabled: true,
 			},
 		},
@@ -55,7 +47,7 @@ const createClient = async (
 	mrIid?: number,
 ) => {
 	logger.info(
-		{ url: server.url, mcpServer: mcpServerPath, projectId, mrIid },
+		{ url: server.url, mcpCommand, projectId, mrIid },
 		"Creating OpenCode client with MCP review tool",
 	);
 
@@ -63,6 +55,9 @@ const createClient = async (
 		directory,
 		baseUrl: server.url,
 	});
+
+	logger.debug({ mcpStatus: await client.mcp.status() }, "MCP status");
+
 	const events = await client.event.subscribe();
 	return { client, events, server };
 };
