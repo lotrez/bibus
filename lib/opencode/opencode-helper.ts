@@ -20,8 +20,10 @@ if (!(await agentConfig.exists())) {
 // When this CLI is compiled we want to invoke the same current command
 // otherwise ["bun", "run", "index.ts", "mcp"]
 const isRunningWithBun = (process.argv[0] ?? "").includes("bun");
+// Get absolute path to index.ts from the current file location
+const indexPath = new URL("../../index.ts", import.meta.url).pathname;
 const mcpCommand: string[] = isRunningWithBun
-	? [process.argv[0] as string, "run", "index.ts", "mcp"]
+	? [process.argv[0] as string, "run", indexPath, "mcp"]
 	: [process.argv[0] as string, "mcp"];
 
 logger.debug({ mcpCommand }, "MCP command configured");
@@ -56,7 +58,12 @@ const createClient = async (
 		baseUrl: server.url,
 	});
 
-	logger.debug({ mcpStatus: await client.mcp.status() }, "MCP status");
+	// Check MCP status and wait for it to be ready
+	const mcpStatus = await client.mcp.status();
+	logger.info(
+		{ mcpStatus: mcpStatus.data },
+		"MCP status after client creation",
+	);
 
 	const events = await client.event.subscribe();
 	return { client, events, server };
@@ -251,7 +258,7 @@ async function createReviewSession(
 					);
 				}
 
-				// Handle post_review_comment tool calls - count them
+				// Handle bibus-review_post_review_comment tool calls - count them
 				if (part.type === "tool" && part.tool === "post_review_comment") {
 					if (part.state.status === "completed") {
 						const params = part.state.input as unknown as ReviewCommentParams;

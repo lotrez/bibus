@@ -14,7 +14,7 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.25.1",
-		"@opencode-ai/sdk": "^1.0.204",
+		"@opencode-ai/sdk": "^1.0.218",
 		"pino": "^10.1.0",
 		"yargs": "^18.0.0",
 		"zod": "^4.2.1"
