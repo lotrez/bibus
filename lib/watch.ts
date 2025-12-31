@@ -1,8 +1,8 @@
-import { currentUser, gitlabClient } from "..";
 import { determineMessageType } from "./opencode/message-router";
 import { answerQuestion } from "./opencode/question.ts";
 import { reviewMergeRequest } from "./opencode/review";
 import { testMergeRequest } from "./opencode/test.ts";
+import { gitlabClient } from "./shared.ts";
 import { pollingIntervalMs } from "./utils/env-vars.ts";
 import logger from "./utils/logger";
 
@@ -17,6 +17,7 @@ export const AVAILABLE_COMMANDS = [
 const MRS_IN_PROGRESS = new Set<number>();
 
 async function detectCommands() {
+	const currentUser = await gitlabClient.getCurrentUser();
 	logger.trace("Fetching to-do items...");
 	// right now we only handle direct mentions
 	const mentions = await gitlabClient

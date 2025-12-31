@@ -1,4 +1,4 @@
-import { gitlabClient } from "../..";
+import { gitlabClient } from "../shared.ts";
 import logger from "../utils/logger";
 
 export const updateProfile = async () => {

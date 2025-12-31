@@ -80,7 +80,7 @@ export class GitLabClient {
 	async getCurrentUser(forceRefresh = false): Promise<CurrentUser> {
 		// Return cached data if available and not forcing refresh
 		if (this.currentUserCache && !forceRefresh) {
-			logger.debug({ cached: true }, "Returning cached user info");
+			logger.trace({ cached: true }, "Returning cached user info");
 			return this.currentUserCache;
 		}
 

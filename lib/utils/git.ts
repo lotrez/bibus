@@ -1,5 +1,5 @@
-import path from "node:path";
 import { $ } from "bun";
+import path from "node:path";
 import { gitlabToken } from "./env-vars";
 import logger from "./logger";
 
@@ -395,7 +395,7 @@ export async function getCurrentBranch(repoPath: string): Promise<string> {
  * @param repoPath - Path to the git repository
  * @throws Error if fetch fails
  */
-export async function fetchAll(repoPath: string): Promise<void> {
+export async function fetchAll(repoPath: string) {
 	logger.debug({ repoPath }, "Starting fetchAll");
 
 	const repoFile = Bun.file(repoPath);
