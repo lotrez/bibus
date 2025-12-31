@@ -17,14 +17,17 @@ if (!(await agentConfig.exists())) {
 	throw new Error(`OpenCode agent config not found`);
 }
 
-// When this CLI is compiled we want to invoke the same current command
-// otherwise ["bun", "run", "index.ts", "mcp"]
-const isRunningWithBun = (process.argv[0] ?? "").includes("bun");
+// Detect if running as compiled binary (argv[1] contains $bunfs when compiled)
+// When compiled: argv = ["bun", "/$bunfs/root/run", ...]
+// When running with bun: argv = ["/path/to/bun", "/path/to/index.ts", ...]
+const isCompiled = (process.argv[1] ?? "").includes("$bunfs");
 // Get absolute path to index.ts from the current file location
 const indexPath = new URL("../../index.ts", import.meta.url).pathname;
-const mcpCommand: string[] = isRunningWithBun
-	? [process.argv[0] as string, "run", indexPath, "mcp"]
-	: [process.argv[0] as string, "mcp"];
+const mcpCommand: string[] = isCompiled
+	? [process.execPath, "mcp"]
+	: [process.argv[0] as string, "run", indexPath, "mcp"];
+
+logger.debug({ isCompiled, mcpCommand }, "MCP command configured");
 
 logger.debug({ mcpCommand }, "MCP command configured");
 
