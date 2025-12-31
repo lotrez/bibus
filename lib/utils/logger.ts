@@ -25,7 +25,7 @@ const logger = pino({
 						},
 						{
 							level: logLevel,
-							target: "pino-pretty",
+							target: "pino/file",
 							options: {
 								colorize: false,
 								translateTime: "yyyy-mm-dd HH:MM:ss",

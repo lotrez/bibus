@@ -3,6 +3,8 @@ import {
 	createOpencodeServer,
 	type OpencodeClient,
 } from "@opencode-ai/sdk/v2";
+// Import the config file to embed it in the compiled executable
+import defaultAgentConfig from "../../config/agents.json" with { type: "file" };
 import type { Discussion } from "../gitlab/gitlab-models.ts";
 import type { ReviewCommentParams } from "../gitlab/mcp.model.ts";
 import {
@@ -11,11 +13,6 @@ import {
 	opencodeProvider,
 } from "../utils/env-vars.ts";
 import logger from "../utils/logger.ts";
-
-const agentConfig = await Bun.file("./config/agents.json");
-if (!(await agentConfig.exists())) {
-	throw new Error(`OpenCode agent config not found`);
-}
 
 // Detect if running as compiled binary (argv[1] contains $bunfs when compiled)
 // When compiled: argv = ["bun", "/$bunfs/root/run", ...]
@@ -35,7 +32,7 @@ logger.debug({ mcpCommand }, "MCP command configured");
 const server = await createOpencodeServer({
 	port: opencodePort,
 	config: {
-		agent: await agentConfig.json(),
+		agent: defaultAgentConfig.agent,
 		mcp: {
 			"bibus-review": {
 				type: "local",
