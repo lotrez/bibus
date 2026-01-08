@@ -20,6 +20,7 @@
 export interface AppConfig {
 	logLevel: string;
 	configPath: string;
+	enableJira: boolean;
 }
 
 /**
@@ -30,6 +31,7 @@ export interface AppConfig {
 export const config: AppConfig = {
 	logLevel: process.env.LOG_LEVEL || "info",
 	configPath: process.env.BIBUS_CONFIG || "config/agents.json",
+	enableJira: process.env.ENABLE_JIRA === "true",
 };
 
 /**
@@ -37,10 +39,5 @@ export const config: AppConfig = {
  * @param updates - Partial config object with values to update
  */
 export function updateConfig(updates: Partial<AppConfig>): void {
-	// Only update defined values
-	for (const [key, value] of Object.entries(updates)) {
-		if (value !== undefined) {
-config[key as keyof AppConfig] = value;
-		}
-	}
+	Object.assign(config, updates);
 }
