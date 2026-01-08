@@ -1,9 +1,10 @@
-import path from "node:path";
 import {
 	createOpencodeClient,
 	createOpencodeServer,
 	type OpencodeClient,
 } from "@opencode-ai/sdk/v2";
+// Import the config file to embed it in the compiled executable
+import defaultAgentConfig from "../../config/agents.json" with { type: "file" };
 import type { Discussion } from "../gitlab/gitlab-models.ts";
 import type { ReviewCommentParams } from "../gitlab/mcp.model.ts";
 import {
@@ -13,36 +14,28 @@ import {
 } from "../utils/env-vars.ts";
 import logger from "../utils/logger.ts";
 
-// Get the path to the MCP server script
-const mcpServerPath = path.join(
-	import.meta.dirname,
-	"../gitlab/mcp-review-server.ts",
-);
-const mcpExists = await Bun.file(mcpServerPath).exists();
-if (!mcpExists) {
-	throw new Error(`MCP server script not found at path: ${mcpServerPath}`);
-}
+// Detect if running as compiled binary (argv[1] contains $bunfs when compiled)
+// When compiled: argv = ["bun", "/$bunfs/root/run", ...]
+// When running with bun: argv = ["/path/to/bun", "/path/to/index.ts", ...]
+const isCompiled = (process.argv[1] ?? "").includes("$bunfs");
+// Get absolute path to index.ts from the current file location
+const indexPath = new URL("../../index.ts", import.meta.url).pathname;
+const mcpCommand: string[] = isCompiled
+	? [process.execPath, "mcp"]
+	: [process.argv[0] as string, "run", indexPath, "mcp"];
 
-const agentConfigPath = path.join(
-	import.meta.dirname,
-	"../../config/agents.json",
-);
-const agentConfigExists = await Bun.file(agentConfigPath).exists();
-if (!agentConfigExists) {
-	throw new Error(
-		`OpenCode agent config not found at path: ${agentConfigPath}`,
-	);
-}
+logger.debug({ isCompiled, mcpCommand }, "MCP command configured");
+
 
 // Create server with MCP config
 const server = await createOpencodeServer({
 	port: opencodePort,
 	config: {
-		agent: await Bun.file(agentConfigPath).json(),
+		agent: defaultAgentConfig.agent,
 		mcp: {
 			"bibus-review": {
 				type: "local",
-				command: ["bun", "run", mcpServerPath],
+				command: mcpCommand,
 				enabled: true,
 			},
 		},
@@ -55,7 +48,7 @@ const createClient = async (
 	mrIid?: number,
 ) => {
 	logger.info(
-		{ url: server.url, mcpServer: mcpServerPath, projectId, mrIid },
+		{ url: server.url, mcpCommand, projectId, mrIid },
 		"Creating OpenCode client with MCP review tool",
 	);
 
@@ -63,6 +56,14 @@ const createClient = async (
 		directory,
 		baseUrl: server.url,
 	});
+
+	// Check MCP status and wait for it to be ready
+	const mcpStatus = await client.mcp.status();
+	logger.info(
+		{ mcpStatus: mcpStatus.data },
+		"MCP status after client creation",
+	);
+
 	const events = await client.event.subscribe();
 	return { client, events, server };
 };
@@ -256,7 +257,7 @@ async function createReviewSession(
 					);
 				}
 
-				// Handle post_review_comment tool calls - count them
+				// Handle bibus-review_post_review_comment tool calls - count them
 				if (part.type === "tool" && part.tool === "post_review_comment") {
 					if (part.state.status === "completed") {
 						const params = part.state.input as unknown as ReviewCommentParams;
