@@ -1,0 +1,23 @@
+services:
+  bibus:
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    environment:
+      # Production mode to skip pino-pretty (not bundled in executable)
+      - NODE_ENV=production
+      # Override these if needed
+      - GITLAB_API_URL=${GITLAB_API_URL:-https://gitlab.com/api/v4}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - POLLING_INTERVAL_MS=${POLLING_INTERVAL_MS:-5000}
+    volumes:
+      # Mount a volume for logs (optional)
+      - ./logs/docker:/app/logs
+      # Mount .temp directory for git clones
+      - ./.temp/docker:/app/.temp
+    restart: unless-stopped
+    # Uncomment to see real-time logs
+    # tty: true
+    # stdin_open: true

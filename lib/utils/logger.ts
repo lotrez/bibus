@@ -1,16 +1,12 @@
 import pino from "pino";
-
-const commandUsed =
-	process.argv[1]?.replaceAll("\\", "/")?.split("/")[
-		process.argv[1]?.replaceAll("\\", "/")?.split("/").length - 1
-	] || "bibus";
+import { config } from "./config.ts";
 
 /**
  * Logger configuration
  * Log levels: trace, debug, info, warn, error, fatal
- * Set LOG_LEVEL environment variable to control verbosity
+ * Uses global config for log level
  */
-const logLevel = process.env.LOG_LEVEL || "info";
+const logLevel = config.logLevel;
 
 const logger = pino({
 	level: logLevel,
@@ -29,12 +25,12 @@ const logger = pino({
 						},
 						{
 							level: logLevel,
-							target: "pino-pretty",
+							target: "pino/file",
 							options: {
 								colorize: false,
 								translateTime: "yyyy-mm-dd HH:MM:ss",
 								ignore: "pid,hostname",
-								destination: `.logs/${commandUsed}.log`,
+								destination: `.logs/bibus.log`,
 								mkdir: true,
 							},
 						},
