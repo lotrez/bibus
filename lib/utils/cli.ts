@@ -1,6 +1,3 @@
-/**
- * CLI configuration using yargs for Bibus commands
- */
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { updateConfig } from "./config.ts";
@@ -46,16 +43,6 @@ export function createCli() {
 
 				// Import logger after config is set
 				const logger = (await import("./logger.ts")).default;
-
-				if (argv.logLevel) {
-					logger.level = argv.logLevel as string;
-					logger.info({ logLevel: argv.logLevel }, "Log level set from CLI");
-				}
-
-				if (argv.config) {
-					logger.info({ config: argv.config }, "Config file path set from CLI");
-				}
-
 				logger.info("Starting MCP review server");
 				// Import and run the MCP server
 				await import("../gitlab/mcp-review-server.ts");
