@@ -38,8 +38,6 @@ build-and-publish:
     - if: $CI_COMMIT_TAG
     # Run on merge requests (optional - comment out if you don't want this)
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-  tags:
-    - docker
 
 # Optional: Build and export the standalone binary as an artifact
 build-binary:
@@ -58,5 +56,3 @@ build-binary:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     # Run on tags
     - if: $CI_COMMIT_TAG
-  tags:
-    - docker
