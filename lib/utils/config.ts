@@ -40,7 +40,7 @@ export function updateConfig(updates: Partial<AppConfig>): void {
 	// Only update defined values
 	for (const [key, value] of Object.entries(updates)) {
 		if (value !== undefined) {
-			config[key as keyof AppConfig] = value as never;
+config[key as keyof AppConfig] = value;
 		}
 	}
 }
