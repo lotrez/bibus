@@ -33,6 +33,21 @@ export class GitLabClient {
 	}
 
 	/**
+	 * Extract project path from a GitLab URL
+	 * @param url - Full GitLab project URL (e.g., "https://gitlab.com/namespace/project")
+	 * @returns The project path (e.g., "namespace/project")
+	 */
+	extractProjectPath(url: string): string {
+		try {
+			const urlObj = new URL(url);
+			const pathname = urlObj.pathname;
+			return pathname.replace(/^\//, "");
+		} catch (_error) {
+			throw new Error(`Invalid GitLab URL: ${url}`);
+		}
+	}
+
+	/**
 	 * Verify the personal access token by fetching its details
 	 * @returns The personal access token information
 	 * @throws Error if the token is invalid or the request fails

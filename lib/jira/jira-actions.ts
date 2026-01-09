@@ -1,11 +1,7 @@
 import type { GitLabClient } from "../gitlab/gitlab-client.ts";
 import { cloneToTempShallow } from "../utils/git.ts";
 import logger from "../utils/logger.ts";
-import {
-	extractProjectKey,
-	getGitLabProjectUrl,
-	getJiraConfig,
-} from "./jira-config.ts";
+import { extractProjectKey, getGitLabProjectUrl } from "./jira-config.ts";
 
 /**
  * Parsed GitLab MR URL information
@@ -58,7 +54,7 @@ export function parseGitLabMRUrl(url: string): ParsedGitLabMR | null {
 
 /**
  * Clone a GitLab repository for a Jira issue mention
- * This function uses the Jira project link configuration to find the GitLab project
+ * This function uses Jira project link configuration to find GitLab project
  *
  * @param gitlabClient - GitLab API client
  * @param issueKey - Jira issue key (e.g., "PROJ-123")
@@ -75,25 +71,27 @@ export async function cloneRepoForJiraIssue(
 } | null> {
 	logger.info({ issueKey }, "Starting clone workflow for Jira issue");
 
+	logger.trace({ issueKey }, "Extracting Jira project key from issue key");
+
 	// Extract Jira project key from issue key (e.g., "PROJ-123" → "PROJ")
 	const jiraProjectKey = extractProjectKey(issueKey);
 
-	// Get the linked GitLab project URL from config
+	logger.trace({ jiraProjectKey, issueKey }, "Retrieved Jira project key");
+
+	logger.trace(
+		{ jiraProjectKey, issueKey },
+		"Getting GitLab project URL from config",
+	);
+
+	// Get linked GitLab project URL from config
 	const gitlabProjectUrl = getGitLabProjectUrl(jiraProjectKey);
 
-	// Check if project is configured
-	const config = getJiraConfig();
-	const isConfigured = gitlabProjectUrl !== null;
+	logger.debug(
+		{ issueKey, jiraProjectKey, gitlabProjectUrl },
+		"Retrieved GitLab project URL for Jira project",
+	);
 
-	if (!isConfigured && !config.settings.allowUnlinkedProjects) {
-		logger.warn(
-			{ jiraProjectKey, issueKey },
-			"Jira project not linked to GitLab project and allowUnlinkedProjects is false",
-		);
-		return null;
-	}
-
-	if (!isConfigured) {
+	if (gitlabProjectUrl === null) {
 		logger.warn(
 			{ jiraProjectKey, issueKey },
 			"Jira project not linked to GitLab project",
@@ -107,26 +105,69 @@ export async function cloneRepoForJiraIssue(
 			"Fetching GitLab project info",
 		);
 
+		logger.trace(
+			{
+				gitlabProjectUrl,
+				jiraProjectKey,
+				clientName: gitlabClient.constructor.name,
+			},
+			"About to call gitlabClient.getProject()",
+		);
+
+		logger.trace({ gitlabProjectUrl }, "Extracting project path from URL");
+
+		const projectPath = gitlabClient.extractProjectPath(gitlabProjectUrl);
+
+		logger.trace({ projectPath, gitlabProjectUrl }, "Project path extracted");
+
 		// Get project info from GitLab
-		// The gitlabProjectUrl can be either a project ID or project path
-		const project = await gitlabClient.getProject(gitlabProjectUrl);
+		const project = await gitlabClient.getProject(projectPath);
+
+		logger.trace(
+			{
+				projectId: project.id,
+				projectName: project.name,
+				projectPath: project.path_with_namespace,
+			},
+			"Successfully fetched project from GitLab",
+		);
 
 		logger.debug(
 			{ projectId: project.id, projectName: project.name },
 			"Retrieved GitLab project info",
 		);
 
-		// Construct the clone URL
+		logger.trace(
+			{
+				httpUrl: project.http_url_to_repo,
+				webUrl: project.web_url,
+			},
+			"Project URLs fetched",
+		);
+
+		// Construct clone URL
 		const cloneUrl =
 			project.http_url_to_repo || `${project.web_url.replace(/\/$/, "")}.git`;
+
+		logger.trace(
+			{ cloneUrl, webUrl: project.web_url, httpUrl: project.http_url_to_repo },
+			"Constructed clone URL",
+		);
 
 		logger.info(
 			{ cloneUrl, projectPath: project.path_with_namespace },
 			"Cloning repository...",
 		);
 
-		// Clone the repository (shallow clone for speed)
+		logger.trace({ cloneUrl }, "About to call cloneToTempShallow()");
+
+		// Clone repository (shallow clone for speed)
 		const cloneResult = await cloneToTempShallow(cloneUrl);
+
+		logger.trace(
+			{ clonePath: cloneResult.path, hasCleanup: typeof cloneResult.cleanup },
+			"Successfully cloned repository",
+		);
 
 		logger.info(
 			{
@@ -144,6 +185,19 @@ export async function cloneRepoForJiraIssue(
 			cleanup: cloneResult.cleanup,
 		};
 	} catch (error) {
+		logger.trace(
+			{
+				error: error instanceof Error ? error.message : String(error),
+				errorStack: error instanceof Error ? error.stack : undefined,
+				errorName: error instanceof Error ? error.name : undefined,
+				issueKey,
+				gitlabProjectUrl,
+				jiraProjectKey,
+				errorType: typeof error,
+			},
+			"Clone workflow caught error",
+		);
+
 		logger.error(
 			{ error, issueKey, gitlabProjectUrl },
 			"Failed to clone repository for Jira issue",

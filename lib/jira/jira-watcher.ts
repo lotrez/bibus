@@ -6,33 +6,11 @@ import { pollingIntervalMs } from "../utils/env-vars.ts";
 import logger from "../utils/logger.ts";
 import { cloneRepoForJiraIssue } from "./jira-actions.ts";
 import type { JiraClient } from "./jira-client.ts";
-import type { ADF, JiraComment, JiraIssue } from "./jira-models.ts";
+import type { JiraComment, JiraIssue } from "./jira-models.ts";
+import { createADFComment, extractPlainTextFromADF } from "./jira-utils.ts";
 
 // Keep track of comments already processed to avoid duplicate work
 const PROCESSED_COMMENTS = new Set<string>();
-
-/**
- * Extract plain text from Atlassian Document Format (ADF) or string
- */
-function extractPlainTextFromADF(body: string | ADF): string {
-	if (typeof body === "string") {
-		return body;
-	}
-
-	if (!body.content) return "";
-
-	let text = "";
-	for (const node of body.content) {
-		if (node.type === "paragraph" && node.content) {
-			for (const child of node.content) {
-				if (child.type === "text" && child.text) {
-					text += `${child.text} `;
-				}
-			}
-		}
-	}
-	return text.trim();
-}
 
 /**
  * Find the comment that mentions the bot
@@ -44,64 +22,130 @@ function findMentionComment(
 	comments: JiraComment[],
 	currentUserId: string,
 ): JiraComment | null {
+	logger.debug(
+		{
+			totalComments: comments.length,
+			currentUserId,
+			processedCommentsCount: PROCESSED_COMMENTS.size,
+		},
+		"Starting findMentionComment search",
+	);
+
 	// Sort comments by created date (newest first)
 	const sortedComments = [...comments].sort(
 		(a, b) => new Date(b.created).getTime() - new Date(a.created).getTime(),
 	);
 
+	logger.debug(
+		{
+			sortedCount: sortedComments.length,
+			newestDate: sortedComments[0]?.created,
+			oldestDate: sortedComments[sortedComments.length - 1]?.created,
+		},
+		"Comments sorted by date",
+	);
+
 	// Find the first comment that mentions the current user
 	for (const comment of sortedComments) {
+		logger.trace(
+			{
+				commentId: comment.id,
+				authorId: comment.author.accountId,
+				authorName: comment.author.displayName,
+				created: comment.created,
+			},
+			"Checking comment",
+		);
+
 		// Skip comments from the bot itself
-		if (comment.author.accountId === currentUserId) {
+		if (
+			comment.author.accountId === currentUserId &&
+			Bun.env.NODE_ENV === "production"
+		) {
+			logger.trace(
+				{ commentId: comment.id },
+				"Skipping comment from bot itself",
+			);
 			continue;
 		}
 
 		// Check if comment has already been processed
 		if (PROCESSED_COMMENTS.has(comment.id)) {
+			logger.trace(
+				{ commentId: comment.id },
+				"Skipping already processed comment",
+			);
 			continue;
 		}
 
+		// Mark comment as processed immediately to avoid duplicates
+		PROCESSED_COMMENTS.add(comment.id);
+
 		// Extract plain text from ADF (Atlassian Document Format)
 		const plainText = extractPlainTextFromADF(comment.body);
+		logger.trace(
+			{
+				commentId: comment.id,
+				plainText: plainText.substring(0, 100),
+				bodyType: typeof comment.body,
+			},
+			"Extracted plain text from comment",
+		);
 
 		// Check if the comment mentions the current user
 		// Jira uses [~accountId] format for mentions in ADF
 		const commentBody = comment.body;
 		if (typeof commentBody !== "string" && commentBody.content) {
 			const bodyJson = JSON.stringify(commentBody.content);
+			logger.trace(
+				{
+					commentId: comment.id,
+					hasContent: !!commentBody.content,
+					contentLength: bodyJson.length,
+					includesUserId: bodyJson.includes(currentUserId),
+				},
+				"Checking ADF content for mention",
+			);
+
 			if (bodyJson.includes(currentUserId)) {
+				logger.debug(
+					{
+						commentId: comment.id,
+						authorName: comment.author.displayName,
+						plainText,
+					},
+					"Found mention in ADF content",
+				);
 				return comment;
 			}
 		}
 
 		// Also check plain text for account ID mentions
+		logger.trace(
+			{
+				commentId: comment.id,
+				plainTextIncludesUserId: plainText.includes(currentUserId),
+			},
+			"Checking plain text for mention",
+		);
+
 		if (plainText.includes(currentUserId)) {
+			logger.debug(
+				{
+					commentId: comment.id,
+					authorName: comment.author.displayName,
+					plainText,
+				},
+				"Found mention in plain text",
+			);
 			return comment;
 		}
+
+		logger.trace({ commentId: comment.id }, "No mention found in comment");
 	}
 
+	logger.debug("No mention comment found");
 	return null;
-}
-
-/**
- * Create an ADF comment body for posting to Jira
- */
-function createADFComment(text: string): ADF {
-	return {
-		type: "doc",
-		version: 1,
-		content: [
-			{
-				type: "paragraph",
-				content: [
-					{
-						type: "text",
-						text,
-					},
-				],
-			},
-		],
-	};
 }
 
 /**
@@ -125,9 +169,6 @@ async function processMention(
 		},
 		"Processing Jira mention",
 	);
-
-	// Mark comment as processed immediately to avoid duplicates
-	PROCESSED_COMMENTS.add(comment.id);
 
 	// Determine the message type for Jira platform (analyze-bug, create-mr, general_question)
 	const messageType = await determineMessageType(plainText, "jira");
@@ -352,7 +393,7 @@ async function detectMentions(
 		logger.trace("Fetching Jira mentions...");
 
 		// Get mentions from the last polling interval (with some buffer)
-		const timeWindowMinutes = Math.ceil(pollingIntervalMs / 60000) + 1;
+		const timeWindowMinutes = Math.ceil(pollingIntervalMs / 60000) + 3;
 		const mentions = await jiraClient.getMentions(
 			projectKeys,
 			`-${timeWindowMinutes}m`,
@@ -369,8 +410,16 @@ async function detectMentions(
 		await Promise.allSettled(
 			mentions.map(async (issue) => {
 				// Get comments for the issue
+				logger.trace(
+					{ issueKey: issue.key },
+					"Fetching comments for mentioned issue",
+				);
 				const comments = await jiraClient.getComments(issue.key);
 
+				logger.trace(
+					{ issueKey: issue.key, commentCount: comments.length },
+					"Comments fetched for issue",
+				);
 				// Find the comment that mentions the bot
 				const mentionComment = findMentionComment(
 					comments,
@@ -386,6 +435,13 @@ async function detectMentions(
 				}
 
 				// Process the mention
+				logger.debug(
+					{
+						issueKey: issue.key,
+						commentId: mentionComment.id,
+					},
+					"Mention comment found, processing",
+				);
 				await processMention(jiraClient, issue, mentionComment);
 			}),
 		);

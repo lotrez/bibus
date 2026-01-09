@@ -22,12 +22,13 @@ bun run index.ts --log-level debug  # Run with debug logging
 
 ### Testing
 ```bash
+bun test                      # Run unit tests (Bun test suite)
 bun run scripts/test-bot.ts   # Create a test GitLab MR with bot mention
 bun run scripts/test-jira.ts  # Test Jira API integration
 bun run scripts/test-mcp.ts   # Test MCP server standalone
 ```
 
-**Note**: This project does not use unit test frameworks. Testing is done via integration test scripts.
+Unit tests use Bun's built-in test suite. Test files should be named `*.spec.ts` and placed in the `test/` directory.
 
 ### Code Quality
 ```bash

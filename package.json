@@ -12,6 +12,9 @@
 	"peerDependencies": {
 		"typescript": "^5"
 	},
+	"scripts": {
+		"test": "bun test"
+	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.25.1",
 		"@opencode-ai/sdk": "1.0.218",

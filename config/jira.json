@@ -1,9 +1,5 @@
 {
-	"projectLinks": {
-		"SMP": "https://gitlab.com/LOTREZ/bibus"
-	},
-	"settings": {
-		"autoCreateRemoteLinks": true,
-		"allowUnlinkedProjects": true
-	}
+  "projectLinks": {
+    "SMP": "https://gitlab.com/LOTREZ/front-end-bibus-test"
+  }
 }
