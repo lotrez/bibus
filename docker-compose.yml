@@ -11,7 +11,6 @@ services:
       # Override these if needed
       - GITLAB_API_URL=${GITLAB_API_URL:-https://gitlab.com/api/v4}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - POLLING_INTERVAL_MS=${POLLING_INTERVAL_MS:-5000}
     volumes:
       # Mount a volume for logs (optional)
       - ./logs/docker:/app/logs

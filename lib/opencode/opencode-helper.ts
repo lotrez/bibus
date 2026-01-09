@@ -26,7 +26,6 @@ const mcpCommand: string[] = isCompiled
 
 logger.debug({ isCompiled, mcpCommand }, "MCP command configured");
 
-
 // Create server with MCP config
 const server = await createOpencodeServer({
 	port: opencodePort,

@@ -18,10 +18,6 @@ const OPENCODE_PORT = OPENCODE_PORT_ENV
 const JIRA_API_URL = process.env.JIRA_API_URL;
 const JIRA_EMAIL = process.env.JIRA_EMAIL;
 const JIRA_API_TOKEN = process.env.JIRA_API_TOKEN;
-const JIRA_POLLING_INTERVAL_MS = parseInt(
-	process.env.JIRA_POLLING_INTERVAL_MS || "60000",
-	10,
-);
 const JIRA_PROJECT_KEYS = process.env.JIRA_PROJECT_KEYS
 	? process.env.JIRA_PROJECT_KEYS.split(",").map((key) => key.trim())
 	: [];
@@ -70,5 +66,4 @@ export const opencodePort = OPENCODE_PORT;
 export const jiraApiUrl = JIRA_API_URL;
 export const jiraEmail = JIRA_EMAIL;
 export const jiraApiToken = JIRA_API_TOKEN;
-export const jiraPollingIntervalMs = JIRA_POLLING_INTERVAL_MS;
 export const jiraProjectKeys = JIRA_PROJECT_KEYS;

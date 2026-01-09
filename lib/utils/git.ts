@@ -1,5 +1,5 @@
-import { $ } from "bun";
 import path from "node:path";
+import { $ } from "bun";
 import { gitlabToken } from "./env-vars";
 import logger from "./logger";
 

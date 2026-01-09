@@ -2,12 +2,16 @@ import { gitlabApiUrl, gitlabToken } from "../utils/env-vars";
 import logger from "../utils/logger";
 import type {
 	AddDiscussionNoteParams,
+	Branch,
+	CreateBranchParams,
 	CreateMergeRequestDiscussionParams,
 	CreateMergeRequestNoteParams,
+	CreateMergeRequestParams,
 	CurrentUser,
 	Discussion,
 	DiscussionNote,
 	GetTodosParams,
+	MergeRequest,
 	MergeRequestDiff,
 	MergeRequestNote,
 	MergeRequestVersion,
@@ -848,6 +852,134 @@ export class GitLabClient {
 		logger.info(
 			{ projectId, mergeRequestIid, discussionId, noteId: data.id },
 			"Discussion reply created",
+		);
+
+		return data;
+	}
+
+	/**
+	 * Create a new branch in a GitLab project
+	 * @param projectId - The ID or URL-encoded path of the project
+	 * @param params - Branch creation parameters
+	 * @returns The created branch
+	 * @throws Error if the request fails
+	 */
+	async createBranch(
+		projectId: string | number,
+		params: CreateBranchParams,
+	): Promise<Branch> {
+		const encodedId = encodeURIComponent(projectId);
+		logger.debug(
+			{ projectId, branch: params.branch, ref: params.ref },
+			"Creating branch",
+		);
+
+		const response = await fetch(
+			`${this.apiUrl}/projects/${encodedId}/repository/branches`,
+			{
+				method: "POST",
+				headers: {
+					"PRIVATE-TOKEN": this.token,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(params),
+			},
+		);
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				logger.error("Invalid GitLab token: 401 Unauthorized");
+				throw new Error("Invalid GitLab token: 401 Unauthorized");
+			}
+			if (response.status === 404) {
+				logger.error({ projectId }, "Project not found");
+				throw new Error(`Project not found: ${projectId}`);
+			}
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText },
+				"Failed to create branch",
+			);
+			throw new Error(
+				`Failed to create branch: ${response.status} ${response.statusText}\n${errorText}`,
+			);
+		}
+
+		const data = (await response.json()) as Branch;
+		logger.info(
+			{ projectId, branchName: data.name },
+			"Branch created successfully",
+		);
+
+		return data;
+	}
+
+	/**
+	 * Create a new merge request in a GitLab project
+	 * @param projectId - The ID or URL-encoded path of the project
+	 * @param params - Merge request creation parameters
+	 * @returns The created merge request
+	 * @throws Error if the request fails
+	 */
+	async createMergeRequest(
+		projectId: string | number,
+		params: CreateMergeRequestParams,
+	): Promise<MergeRequest> {
+		const encodedId = encodeURIComponent(projectId);
+		logger.debug(
+			{
+				projectId,
+				sourceBranch: params.source_branch,
+				targetBranch: params.target_branch,
+				title: params.title,
+			},
+			"Creating merge request",
+		);
+
+		const response = await fetch(
+			`${this.apiUrl}/projects/${encodedId}/merge_requests`,
+			{
+				method: "POST",
+				headers: {
+					"PRIVATE-TOKEN": this.token,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(params),
+			},
+		);
+
+		if (!response.ok) {
+			if (response.status === 401) {
+				logger.error("Invalid GitLab token: 401 Unauthorized");
+				throw new Error("Invalid GitLab token: 401 Unauthorized");
+			}
+			if (response.status === 404) {
+				logger.error({ projectId }, "Project not found");
+				throw new Error(`Project not found: ${projectId}`);
+			}
+			if (response.status === 409) {
+				logger.error(
+					{ sourceBranch: params.source_branch },
+					"Merge request already exists",
+				);
+				throw new Error(
+					`Merge request already exists for branch: ${params.source_branch}`,
+				);
+			}
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText },
+				"Failed to create merge request",
+			);
+			throw new Error(
+				`Failed to create merge request: ${response.status} ${response.statusText}\n${errorText}`,
+			);
+		}
+
+		const data = (await response.json()) as MergeRequest;
+		logger.info(
+			{ projectId, mrIid: data.iid, mrUrl: data.web_url },
+			"Merge request created successfully",
 		);
 
 		return data;

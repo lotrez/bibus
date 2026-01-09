@@ -1,6 +1,6 @@
 # Agent Guidelines for Bibus
 
-This document contains guidelines for AI coding agents working on the Bibus project - a GitLab bot that responds to mentions in merge requests.
+This document contains guidelines for AI coding agents working on the Bibus project - a GitLab and Jira bot that responds to mentions in merge requests and Jira issues.
 
 ## Project Overview
 
@@ -8,29 +8,52 @@ This document contains guidelines for AI coding agents working on the Bibus proj
 - **Language**: TypeScript (strict mode)
 - **Linter/Formatter**: Biome
 - **Package Manager**: Bun
+- **Integrations**: GitLab (required), Jira (optional)
 
 ## Build, Lint, and Test Commands
 
 ### Running the Application
 ```bash
-bun run index.ts              # Run the main bot
-bun run test-bot.ts          # Create a test MR with bot mention
+bun run index.ts                    # Run the main bot (GitLab + Jira if enabled)
+bun run index.ts run                # Explicitly run bot
+bun run index.ts mcp                # Run MCP review server only
+bun run index.ts --log-level debug  # Run with debug logging
 ```
+
+### Testing
+```bash
+bun run scripts/test-bot.ts   # Create a test GitLab MR with bot mention
+bun run scripts/test-jira.ts  # Test Jira API integration
+bun run scripts/test-mcp.ts   # Test MCP server standalone
+```
+
+**Note**: This project does not use unit test frameworks. Testing is done via integration test scripts.
 
 ### Code Quality
 ```bash
-bun biome check .            # Run formatter, linter, and import sorting
-bun biome format --write .   # Format code
-bun biome lint .             # Lint code
-bun biome ci .               # CI mode (for pre-commit checks)
+bun biome check .                    # Run formatter, linter, and import sorting
+bun biome check --write .            # Apply safe fixes automatically
+bun biome check --write --unsafe .   # Apply all fixes (including unsafe)
+bun biome format --write .           # Format code only
+bun biome lint .                     # Lint code only
+bun biome ci .                       # CI mode (for pre-commit checks)
+bunx tsc --noEmit                    # TypeScript type checking only
 ```
 
 ### Environment Setup
 ```bash
 cp .env.example .env         # Copy environment template
-# Edit .env with your GitLab token and API URL
+# Edit .env with your tokens and API URLs
 
-# Set log level for debugging
+# Required variables:
+# - GITLAB_TOKEN, GITLAB_API_URL
+# - OPENCODE_PROVIDER, OPENCODE_MODEL
+
+# Optional Jira variables (set ENABLE_JIRA=true to activate):
+# - JIRA_API_URL, JIRA_EMAIL, JIRA_API_TOKEN
+# - JIRA_PROJECT_KEYS, JIRA_POLLING_INTERVAL_MS
+
+# Run with custom log level
 LOG_LEVEL=debug bun run index.ts
 ```
 
@@ -52,7 +75,9 @@ LOG_LEVEL=debug bun run index.ts
 - **Always use explicit types** for function parameters and return values
 - Use `interface` for object shapes, `type` for unions/intersections
 - Place all type definitions in `lib/gitlab/gitlab-models.ts` for GitLab API responses
+- Place Jira type definitions in `lib/jira/jira-models.ts` for Jira API responses
 - Avoid `any` - use `unknown` if type is truly unknown, then narrow with type guards
+- Explicit return types on functions are optional if inferred type is clear
 - Example:
   ```typescript
   async function getTodos(params?: GetTodosParams): Promise<Todo[]> {
@@ -69,7 +94,7 @@ LOG_LEVEL=debug bun run index.ts
 - **Private class members**: prefix with `private` keyword, use `camelCase`
 
 ### Error Handling
-- Always validate environment variables at startup (see `lib/env-vars.ts`)
+- Always validate environment variables at startup (see `lib/utils/env-vars.ts`)
 - Use descriptive error messages with context
 - Check HTTP responses with `if (!response.ok)` before parsing
 - Include response status and text in error messages
@@ -109,8 +134,9 @@ LOG_LEVEL=debug bun run index.ts
 
 ### Code Organization
 - Place GitLab API client code in `lib/gitlab/`
+- Place Jira API client code in `lib/jira/`
 - Place utility functions in `lib/` (e.g., `git.ts`, `env-vars.ts`, `logger.ts`)
-- Keep models/interfaces separate in `gitlab-models.ts`
+- Keep models/interfaces separate in `gitlab-models.ts` and `jira-models.ts`
 - Main bot logic goes in `index.ts`
 - Test utilities in `test-bot.ts`
 - MCP server code in `lib/mcp-review-server.ts`
@@ -160,6 +186,14 @@ Required (in `.env`):
 Optional (for testing):
 - `GITLAB_TEST_TOKEN` - Token for test project
 - `GITLAB_TEST_PROJECT` - Project ID for testing
+
+Optional (for Jira integration):
+- `ENABLE_JIRA` - Set to "true" to enable Jira integration
+- `JIRA_API_URL` - Jira Cloud URL (e.g., https://your-domain.atlassian.net)
+- `JIRA_EMAIL` - Email for Jira authentication
+- `JIRA_API_TOKEN` - Jira API token (create at https://id.atlassian.com/manage-profile/security/api-tokens)
+- `JIRA_POLLING_INTERVAL_MS` - Polling interval for Jira mentions (default: 60000)
+- `JIRA_PROJECT_KEYS` - Comma-separated list of Jira project keys to monitor
 
 ## TypeScript Configuration Notes
 

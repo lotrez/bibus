@@ -156,3 +156,39 @@ export interface UpdateIssueParams {
 		[key: string]: unknown;
 	};
 }
+
+/**
+ * Parameters for creating a remote link on an issue
+ */
+export interface CreateRemoteLinkParams {
+	url: string;
+	title: string;
+	summary?: string;
+	icon?: {
+		url16x16?: string;
+		title?: string;
+	};
+	relationship?: string;
+}
+
+/**
+ * Remote link representation
+ */
+export interface RemoteLink {
+	id: number;
+	self: string;
+	globalId?: string;
+	application?: {
+		type: string;
+		name: string;
+	};
+	object: {
+		url: string;
+		title: string;
+		summary?: string;
+		icon?: {
+			url16x16?: string;
+			title?: string;
+		};
+	};
+}

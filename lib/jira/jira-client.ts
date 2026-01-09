@@ -1,11 +1,13 @@
 import logger from "../utils/logger.ts";
 import type {
 	AddCommentParams,
+	CreateRemoteLinkParams,
 	JiraComment,
 	JiraIssue,
 	JiraSearchResults,
 	JiraUser,
 	JQLSearchParams,
+	RemoteLink,
 	UpdateIssueParams,
 } from "./jira-models.ts";
 
@@ -167,7 +169,7 @@ export class JiraClient {
 		}
 
 		const response = await fetch(
-			`${this.apiUrl}/rest/api/3/search?${queryParams}`,
+			`${this.apiUrl}/rest/api/3/search/jql?${queryParams}`,
 			{
 				method: "GET",
 				headers: {
@@ -381,5 +383,62 @@ export class JiraClient {
 		});
 
 		logger.info({ issueKey, label }, "Label added successfully");
+	}
+
+	/**
+	 * Create a remote link on an issue (e.g., link to GitLab MR)
+	 * @param issueKey - The issue key (e.g., "PROJ-123")
+	 * @param params - Remote link parameters
+	 * @returns The created remote link
+	 * @throws Error if the request fails
+	 */
+	async createRemoteLink(
+		issueKey: string,
+		params: CreateRemoteLinkParams,
+	): Promise<RemoteLink> {
+		logger.debug({ issueKey, url: params.url }, "Creating remote link");
+
+		const requestBody = {
+			object: {
+				url: params.url,
+				title: params.title,
+				summary: params.summary,
+				icon: params.icon,
+			},
+			relationship: params.relationship || "relates to",
+		};
+
+		const response = await fetch(
+			`${this.apiUrl}/rest/api/3/issue/${encodeURIComponent(issueKey)}/remotelink`,
+			{
+				method: "POST",
+				headers: {
+					Authorization: this.getAuthHeader(),
+					Accept: "application/json",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(requestBody),
+			},
+		);
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			logger.error(
+				{ status: response.status, error: errorText, issueKey },
+				"Failed to create remote link",
+			);
+			throw new Error(
+				`Failed to create remote link: ${response.status} ${response.statusText}`,
+			);
+		}
+
+		const data = (await response.json()) as RemoteLink;
+
+		logger.info(
+			{ issueKey, linkId: data.id, url: params.url },
+			"Remote link created successfully",
+		);
+
+		return data;
 	}
 }

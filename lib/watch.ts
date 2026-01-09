@@ -1,4 +1,7 @@
-import { determineMessageType } from "./opencode/message-router";
+import {
+	determineMessageType,
+	GITLAB_COMMANDS,
+} from "./opencode/message-router";
 import { answerQuestion } from "./opencode/question.ts";
 import { reviewMergeRequest } from "./opencode/review";
 import { testMergeRequest } from "./opencode/test.ts";
@@ -7,11 +10,7 @@ import { pollingIntervalMs } from "./utils/env-vars.ts";
 import logger from "./utils/logger";
 
 const POLLING_INTERVAL_MS = pollingIntervalMs;
-export const AVAILABLE_COMMANDS = [
-	"review",
-	"general_question",
-	"test",
-] as const;
+export const AVAILABLE_COMMANDS = GITLAB_COMMANDS;
 
 // Keep track of MRs currently being processed to avoid duplicate work
 const MRS_IN_PROGRESS = new Set<number>();
@@ -51,7 +50,7 @@ async function detectCommands() {
 			}
 			if (!item.body) return;
 			MRS_IN_PROGRESS.add(item.target.id);
-			const type = await determineMessageType(item.body || "");
+			const type = await determineMessageType(item.body || "", "gitlab");
 			switch (type) {
 				case "review":
 					await reviewMergeRequest(item);

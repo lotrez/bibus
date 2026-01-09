@@ -473,3 +473,141 @@ export interface MergeRequestDiff {
 	real_size: string;
 	diffs: MergeRequestDiffFile[];
 }
+
+/**
+ * Parameters for creating a new branch
+ */
+export interface CreateBranchParams {
+	branch: string; // Name of the new branch
+	ref: string; // The branch name or commit SHA to create branch from
+}
+
+/**
+ * Represents a Git branch
+ */
+export interface Branch {
+	name: string;
+	commit: {
+		id: string;
+		short_id: string;
+		title: string;
+		author_name: string;
+		author_email: string;
+		created_at: string;
+		message: string;
+	};
+	merged: boolean;
+	protected: boolean;
+	developers_can_push: boolean;
+	developers_can_merge: boolean;
+	can_push: boolean;
+	default: boolean;
+	web_url: string;
+}
+
+/**
+ * Parameters for creating a new merge request
+ */
+export interface CreateMergeRequestParams {
+	source_branch: string;
+	target_branch: string;
+	title: string;
+	description?: string;
+	assignee_id?: number;
+	reviewer_ids?: number[];
+	labels?: string[];
+	remove_source_branch?: boolean;
+	squash?: boolean;
+}
+
+/**
+ * Represents a GitLab merge request
+ */
+export interface MergeRequest {
+	id: number;
+	iid: number;
+	project_id: number;
+	title: string;
+	description: string;
+	state: string;
+	created_at: string;
+	updated_at: string;
+	merged_by: null | {
+		id: number;
+		username: string;
+		name: string;
+	};
+	merge_user: null | {
+		id: number;
+		username: string;
+		name: string;
+	};
+	merged_at: string | null;
+	closed_by: null | {
+		id: number;
+		username: string;
+		name: string;
+	};
+	closed_at: string | null;
+	target_branch: string;
+	source_branch: string;
+	upvotes: number;
+	downvotes: number;
+	author: {
+		id: number;
+		username: string;
+		name: string;
+		state: string;
+		avatar_url: string;
+		web_url: string;
+	};
+	assignee: null | {
+		id: number;
+		username: string;
+		name: string;
+	};
+	assignees: Array<{
+		id: number;
+		username: string;
+		name: string;
+	}>;
+	reviewers: Array<{
+		id: number;
+		username: string;
+		name: string;
+	}>;
+	source_project_id: number;
+	target_project_id: number;
+	labels: string[];
+	draft: boolean;
+	work_in_progress: boolean;
+	milestone: null | {
+		id: number;
+		title: string;
+	};
+	merge_when_pipeline_succeeds: boolean;
+	merge_status: string;
+	sha: string;
+	merge_commit_sha: string | null;
+	squash_commit_sha: string | null;
+	user_notes_count: number;
+	discussion_locked: boolean | null;
+	should_remove_source_branch: boolean | null;
+	force_remove_source_branch: boolean;
+	reference: string;
+	references: {
+		short: string;
+		relative: string;
+		full: string;
+	};
+	web_url: string;
+	time_stats: {
+		time_estimate: number;
+		total_time_spent: number;
+		human_time_estimate: string | null;
+		human_total_time_spent: string | null;
+	};
+	squash: boolean;
+	has_conflicts: boolean;
+	blocking_discussions_resolved: boolean;
+}
