@@ -148,7 +148,7 @@ export class JiraClient {
 			validateQuery = "warn",
 		} = params;
 
-		logger.debug(
+		logger.trace(
 			{ jql, startAt, maxResults },
 			"Searching Jira issues with JQL",
 		);
@@ -192,7 +192,7 @@ export class JiraClient {
 
 		const data = (await response.json()) as JiraSearchResults;
 
-		logger.debug(
+		logger.trace(
 			{
 				total: data.total,
 				returned: data.issues.length,
@@ -228,7 +228,7 @@ export class JiraClient {
 
 		jql += " ORDER BY updated DESC";
 
-		logger.debug({ jql }, "Searching for mentions");
+		logger.trace({ jql }, "Searching for mentions");
 
 		const results = await this.searchIssues({
 			jql,
@@ -246,7 +246,7 @@ export class JiraClient {
 	 * @throws Error if the request fails
 	 */
 	async getComments(issueKey: string): Promise<JiraComment[]> {
-		logger.debug({ issueKey }, "Fetching comments for issue");
+		logger.trace({ issueKey }, "Fetching comments for issue");
 
 		const response = await fetch(
 			`${this.apiUrl}/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`,
@@ -277,7 +277,7 @@ export class JiraClient {
 			startAt: number;
 		};
 
-		logger.debug(
+		logger.trace(
 			{ issueKey, commentCount: data.comments.length },
 			"Comments retrieved",
 		);

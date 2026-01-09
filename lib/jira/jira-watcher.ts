@@ -22,7 +22,7 @@ function findMentionComment(
 	comments: JiraComment[],
 	currentUserId: string,
 ): JiraComment | null {
-	logger.debug(
+	logger.trace(
 		{
 			totalComments: comments.length,
 			currentUserId,
@@ -36,7 +36,7 @@ function findMentionComment(
 		(a, b) => new Date(b.created).getTime() - new Date(a.created).getTime(),
 	);
 
-	logger.debug(
+	logger.trace(
 		{
 			sortedCount: sortedComments.length,
 			newestDate: sortedComments[0]?.created,
@@ -144,7 +144,7 @@ function findMentionComment(
 		logger.trace({ commentId: comment.id }, "No mention found in comment");
 	}
 
-	logger.debug("No mention comment found");
+	logger.trace("No mention comment found");
 	return null;
 }
 
@@ -400,7 +400,7 @@ async function detectMentions(
 		);
 
 		if (mentions.length > 0) {
-			logger.debug(
+			logger.trace(
 				{ count: mentions.length, user: currentUser.displayName },
 				"Jira mentions found",
 			);
