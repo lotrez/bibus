@@ -7,14 +7,12 @@ import logger from "../utils/logger.ts";
 import { cloneRepoForJiraIssue } from "./jira-actions.ts";
 import type { JiraClient } from "./jira-client.ts";
 import type { JiraComment, JiraIssue } from "./jira-models.ts";
+import { jiraState } from "./jira-state.ts";
 import {
 	createADFComment,
 	extractPlainTextFromADF,
 	findMentionComment,
 } from "./jira-utils.ts";
-
-// Keep track of comments already processed to avoid duplicate work
-const PROCESSING_COMMENTS = new Set<string>();
 
 /**
  * Process a Jira issue mention
@@ -260,12 +258,8 @@ async function detectMentions(
 		const currentUser = await jiraClient.getCurrentUser();
 		logger.trace("Fetching Jira mentions...");
 
-		// Get mentions from the last polling interval (with some buffer)
-		const timeWindowMinutes = Math.ceil(pollingIntervalMs / 60000) + 3;
-		const mentions = await jiraClient.getMentions(
-			projectKeys,
-			`-${timeWindowMinutes}m`,
-		);
+		// Get mentions from the last 3 minutes only
+		const mentions = await jiraClient.getMentions(projectKeys, "-3m");
 
 		if (mentions.length > 0) {
 			logger.trace(
@@ -289,9 +283,11 @@ async function detectMentions(
 					"Comments fetched for issue",
 				);
 				// Find the comment that mentions the bot
+				const processedComments = jiraState.getProcessedComments();
 				const mentionComment = findMentionComment(
 					comments,
 					currentUser.accountId,
+					processedComments,
 				);
 
 				if (!mentionComment) {
@@ -310,14 +306,14 @@ async function detectMentions(
 					},
 					"Mention comment found, processing",
 				);
-				if (PROCESSING_COMMENTS.has(mentionComment.id)) {
+				if (jiraState.isProcessed(mentionComment.id)) {
 					logger.debug(
 						{ issueKey: issue.key, commentId: mentionComment.id },
 						"Mention comment already processed, skipping",
 					);
 					return;
 				}
-				PROCESSING_COMMENTS.add(mentionComment.id);
+				jiraState.markProcessed(mentionComment.id);
 				await processMention(jiraClient, issue, mentionComment);
 			}),
 		);

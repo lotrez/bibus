@@ -5,11 +5,13 @@ import type { ADF, JiraComment } from "./jira-models";
  * Find the comment that mentions the bot
  * @param comments - Array of comments for an issue
  * @param currentUserId - The bot's Jira account ID
+ * @param processedComments - Set of comment IDs already processed
  * @returns The comment that mentions the bot, or null if not found
  */
 export function findMentionComment(
 	comments: JiraComment[],
 	currentUserId: string,
+	processedComments: Set<string>,
 ): JiraComment | null {
 	logger.trace(
 		{
@@ -33,7 +35,7 @@ export function findMentionComment(
 		"Comments sorted by date",
 	);
 
-	// Find the first comment that mentions the current user
+	// Find the first comment that mentions the current user and isn't processed
 	for (const comment of sortedComments) {
 		logger.trace(
 			{
@@ -53,6 +55,15 @@ export function findMentionComment(
 			logger.trace(
 				{ commentId: comment.id },
 				"Skipping comment from bot itself",
+			);
+			continue;
+		}
+
+		// Skip already processed comments
+		if (processedComments.has(comment.id)) {
+			logger.trace(
+				{ commentId: comment.id },
+				"Skipping already processed comment",
 			);
 			continue;
 		}
