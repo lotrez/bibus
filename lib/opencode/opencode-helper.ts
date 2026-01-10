@@ -19,7 +19,10 @@ import logger from "../utils/logger.ts";
 // When running with bun: argv = ["/path/to/bun", "/path/to/index.ts", ...]
 const isCompiled = (process.argv[1] ?? "").includes("$bunfs");
 // Get absolute path to index.ts from the current file location
-const indexPath = new URL("../../index.ts", import.meta.url).pathname;
+const indexPath = new URL("../../index.ts", import.meta.url).pathname.replace(
+	/^\//,
+	"",
+);
 const mcpCommand: string[] = isCompiled
 	? [process.execPath, "mcp"]
 	: [process.argv[0] as string, "run", indexPath, "mcp"];

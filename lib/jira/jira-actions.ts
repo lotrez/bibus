@@ -86,7 +86,7 @@ export async function cloneRepoForJiraIssue(
 	// Get linked GitLab project URL from config
 	const gitlabProjectUrl = getGitLabProjectUrl(jiraProjectKey);
 
-	logger.debug(
+	logger.info(
 		{ issueKey, jiraProjectKey, gitlabProjectUrl },
 		"Retrieved GitLab project URL for Jira project",
 	);
@@ -185,7 +185,7 @@ export async function cloneRepoForJiraIssue(
 			cleanup: cloneResult.cleanup,
 		};
 	} catch (error) {
-		logger.trace(
+		logger.error(
 			{
 				error: error instanceof Error ? error.message : String(error),
 				errorStack: error instanceof Error ? error.stack : undefined,

@@ -49,6 +49,16 @@ const reviewCommentSchema = z.object({
 	mrIid: z.number().int(),
 });
 
+const createMergeRequestSchema = z.object({
+	projectId: z.number().int(),
+	sourceBranch: z.string().min(1),
+	targetBranch: z.string().min(1),
+	title: z.string().min(1),
+	description: z.string().optional(),
+	labels: z.array(z.string()).optional(),
+	removeSourceBranch: z.boolean().optional(),
+});
+
 /**
  * Get the latest MR version (cached per project+MR)
  */
@@ -305,6 +315,58 @@ Only omit suggestedCode for "praise" severity.`,
 					},
 				},
 			},
+			{
+				name: "create_merge_request",
+				description: `Create a merge request in GitLab.
+
+Use this tool after you have created a branch, made commits, and pushed them to GitLab.
+
+Example workflow:
+1. Create a new branch: git checkout -b fix/issue-123
+2. Make changes to files
+3. Commit changes: git add . && git commit -m "Fix issue 123"
+4. Push to remote: git push -u origin fix/issue-123
+5. Create MR: use this tool with the branch name and project ID`,
+				inputSchema: {
+					type: "object",
+					required: ["projectId", "sourceBranch", "targetBranch", "title"],
+					properties: {
+						projectId: {
+							type: "number",
+							description: "GitLab project ID (integer)",
+						},
+						sourceBranch: {
+							type: "string",
+							description:
+								"Source branch name (the branch with your changes, e.g. 'fix/issue-123')",
+						},
+						targetBranch: {
+							type: "string",
+							description:
+								"Target branch name (the branch to merge into, usually 'main' or 'master')",
+						},
+						title: {
+							type: "string",
+							description: "Title of the merge request",
+						},
+						description: {
+							type: "string",
+							description: "Description of the merge request (optional)",
+						},
+						labels: {
+							type: "array",
+							items: { type: "string" },
+							description:
+								"Array of label names to add to the MR (optional, e.g. ['bug', 'high-priority'])",
+						},
+						removeSourceBranch: {
+							type: "boolean",
+							description:
+								"Whether to remove the source branch after merge (optional, default: false)",
+						},
+					},
+				},
+			},
 		],
 	};
 });
@@ -319,7 +381,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		"Tool call received",
 	);
 
-	if (request.params.name !== "post_review_comment") {
+	if (
+		request.params.name !== "post_review_comment" &&
+		request.params.name !== "create_merge_request"
+	) {
 		logger.warn({ name: request.params.name }, "Unknown tool requested");
 		throw new McpError(
 			ErrorCode.MethodNotFound,
@@ -336,6 +401,55 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			"Raw tool arguments received",
 		);
 
+		// Handle create_merge_request tool
+		if (request.params.name === "create_merge_request") {
+			const params = createMergeRequestSchema.parse(request.params.arguments);
+
+			logger.info(
+				{
+					projectId: params.projectId,
+					sourceBranch: params.sourceBranch,
+					targetBranch: params.targetBranch,
+					title: params.title,
+				},
+				"Creating merge request",
+			);
+
+			// Create the merge request using GitLab client
+			const mr = await gitlabClient.createMergeRequest(params.projectId, {
+				source_branch: params.sourceBranch,
+				target_branch: params.targetBranch,
+				title: params.title,
+				description: params.description,
+				labels: params.labels,
+				remove_source_branch: params.removeSourceBranch,
+			});
+
+			logger.info(
+				{
+					mrIid: mr.iid,
+					mrUrl: mr.web_url,
+				},
+				"Merge request created successfully",
+			);
+
+			const response = `✅ Merge request created successfully!
+
+**MR !${mr.iid}**: ${mr.title}
+**URL**: ${mr.web_url}
+**Source**: ${params.sourceBranch} → **Target**: ${params.targetBranch}`;
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: response,
+					},
+				],
+			};
+		}
+
+		// Handle post_review_comment tool (existing code)
 		// Validate and parse tool arguments with Zod
 		const params = reviewCommentSchema.parse(request.params.arguments);
 

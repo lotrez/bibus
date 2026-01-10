@@ -1,21 +1,14 @@
 import pino from "pino";
 import { config } from "./config.ts";
 
-/**
- * Logger configuration
- * Log levels: trace, debug, info, warn, error, fatal
- * Uses global config for log level
- */
-const logLevel = config.logLevel;
-
 const logger = pino({
-	level: logLevel,
+	level: config.logLevel,
 	transport:
 		process.env.NODE_ENV !== "production"
 			? {
 					targets: [
 						{
-							level: logLevel,
+							level: config.logLevel,
 							target: "pino-pretty",
 							options: {
 								colorize: true,
@@ -24,7 +17,7 @@ const logger = pino({
 							},
 						},
 						{
-							level: logLevel,
+							level: config.logLevel,
 							target: "pino/file",
 							options: {
 								colorize: false,

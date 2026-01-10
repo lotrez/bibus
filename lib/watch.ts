@@ -9,7 +9,6 @@ import { gitlabClient } from "./shared.ts";
 import { pollingIntervalMs } from "./utils/env-vars.ts";
 import logger from "./utils/logger";
 
-const POLLING_INTERVAL_MS = pollingIntervalMs;
 export const AVAILABLE_COMMANDS = GITLAB_COMMANDS;
 
 // Keep track of MRs currently being processed to avoid duplicate work
@@ -75,7 +74,7 @@ async function detectCommands() {
 export async function startWatching() {
 	const interval = setInterval(async () => {
 		await detectCommands();
-	}, POLLING_INTERVAL_MS);
+	}, pollingIntervalMs);
 	await detectCommands(); // Initial immediate check
 	return interval;
 }

@@ -7,146 +7,14 @@ import logger from "../utils/logger.ts";
 import { cloneRepoForJiraIssue } from "./jira-actions.ts";
 import type { JiraClient } from "./jira-client.ts";
 import type { JiraComment, JiraIssue } from "./jira-models.ts";
-import { createADFComment, extractPlainTextFromADF } from "./jira-utils.ts";
+import {
+	createADFComment,
+	extractPlainTextFromADF,
+	findMentionComment,
+} from "./jira-utils.ts";
 
 // Keep track of comments already processed to avoid duplicate work
-const PROCESSED_COMMENTS = new Set<string>();
-
-/**
- * Find the comment that mentions the bot
- * @param comments - Array of comments for an issue
- * @param currentUserId - The bot's Jira account ID
- * @returns The comment that mentions the bot, or null if not found
- */
-function findMentionComment(
-	comments: JiraComment[],
-	currentUserId: string,
-): JiraComment | null {
-	logger.trace(
-		{
-			totalComments: comments.length,
-			currentUserId,
-			processedCommentsCount: PROCESSED_COMMENTS.size,
-		},
-		"Starting findMentionComment search",
-	);
-
-	// Sort comments by created date (newest first)
-	const sortedComments = [...comments].sort(
-		(a, b) => new Date(b.created).getTime() - new Date(a.created).getTime(),
-	);
-
-	logger.trace(
-		{
-			sortedCount: sortedComments.length,
-			newestDate: sortedComments[0]?.created,
-			oldestDate: sortedComments[sortedComments.length - 1]?.created,
-		},
-		"Comments sorted by date",
-	);
-
-	// Find the first comment that mentions the current user
-	for (const comment of sortedComments) {
-		logger.trace(
-			{
-				commentId: comment.id,
-				authorId: comment.author.accountId,
-				authorName: comment.author.displayName,
-				created: comment.created,
-			},
-			"Checking comment",
-		);
-
-		// Skip comments from the bot itself
-		if (
-			comment.author.accountId === currentUserId &&
-			Bun.env.NODE_ENV === "production"
-		) {
-			logger.trace(
-				{ commentId: comment.id },
-				"Skipping comment from bot itself",
-			);
-			continue;
-		}
-
-		// Check if comment has already been processed
-		if (PROCESSED_COMMENTS.has(comment.id)) {
-			logger.trace(
-				{ commentId: comment.id },
-				"Skipping already processed comment",
-			);
-			continue;
-		}
-
-		// Mark comment as processed immediately to avoid duplicates
-		PROCESSED_COMMENTS.add(comment.id);
-
-		// Extract plain text from ADF (Atlassian Document Format)
-		const plainText = extractPlainTextFromADF(comment.body);
-		logger.trace(
-			{
-				commentId: comment.id,
-				plainText: plainText.substring(0, 100),
-				bodyType: typeof comment.body,
-			},
-			"Extracted plain text from comment",
-		);
-
-		// Check if the comment mentions the current user
-		// Jira uses [~accountId] format for mentions in ADF
-		const commentBody = comment.body;
-		if (typeof commentBody !== "string" && commentBody.content) {
-			const bodyJson = JSON.stringify(commentBody.content);
-			logger.trace(
-				{
-					commentId: comment.id,
-					hasContent: !!commentBody.content,
-					contentLength: bodyJson.length,
-					includesUserId: bodyJson.includes(currentUserId),
-				},
-				"Checking ADF content for mention",
-			);
-
-			if (bodyJson.includes(currentUserId)) {
-				logger.debug(
-					{
-						commentId: comment.id,
-						authorName: comment.author.displayName,
-						plainText,
-					},
-					"Found mention in ADF content",
-				);
-				return comment;
-			}
-		}
-
-		// Also check plain text for account ID mentions
-		logger.trace(
-			{
-				commentId: comment.id,
-				plainTextIncludesUserId: plainText.includes(currentUserId),
-			},
-			"Checking plain text for mention",
-		);
-
-		if (plainText.includes(currentUserId)) {
-			logger.debug(
-				{
-					commentId: comment.id,
-					authorName: comment.author.displayName,
-					plainText,
-				},
-				"Found mention in plain text",
-			);
-			return comment;
-		}
-
-		logger.trace({ commentId: comment.id }, "No mention found in comment");
-	}
-
-	logger.trace("No mention comment found");
-	return null;
-}
+const PROCESSING_COMMENTS = new Set<string>();
 
 /**
  * Process a Jira issue mention
@@ -154,7 +22,7 @@ function findMentionComment(
  * @param issue - The Jira issue where the bot was mentioned
  * @param comment - The comment that mentioned the bot
  */
-async function processMention(
+export async function processMention(
 	jiraClient: JiraClient,
 	issue: JiraIssue,
 	comment: JiraComment,
@@ -442,6 +310,14 @@ async function detectMentions(
 					},
 					"Mention comment found, processing",
 				);
+				if (PROCESSING_COMMENTS.has(mentionComment.id)) {
+					logger.debug(
+						{ issueKey: issue.key, commentId: mentionComment.id },
+						"Mention comment already processed, skipping",
+					);
+					return;
+				}
+				PROCESSING_COMMENTS.add(mentionComment.id);
 				await processMention(jiraClient, issue, mentionComment);
 			}),
 		);

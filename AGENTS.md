@@ -22,10 +22,11 @@ bun run index.ts --log-level debug  # Run with debug logging
 
 ### Testing
 ```bash
-bun test                      # Run unit tests (Bun test suite)
-bun run scripts/test-bot.ts   # Create a test GitLab MR with bot mention
-bun run scripts/test-jira.ts  # Test Jira API integration
-bun run scripts/test-mcp.ts   # Test MCP server standalone
+bun test                                                       # Run unit tests (Bun test suite)
+bun run scripts/test-bot.ts                                    # Create a test GitLab MR with bot mention
+bun run scripts/test-jira.ts                                   # Test Jira API integration
+bun run scripts/test-jira-comment.ts "PROJ-123" "analyze bug" # Simulate comment on real Jira issue
+bun run scripts/test-mcp.ts                                    # Test MCP server standalone
 ```
 
 Unit tests use Bun's built-in test suite. Test files should be named `*.spec.ts` and placed in the `test/` directory.

@@ -53,6 +53,7 @@ export function createCli() {
 			type: "string",
 			description: "Set log level",
 			choices: ["trace", "debug", "info", "warn", "error", "fatal"],
+			default: "info",
 		})
 		.option("config", {
 			alias: "c",
